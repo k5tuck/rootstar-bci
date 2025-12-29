@@ -1,0 +1,218 @@
+[workspace]
+resolver = "2"
+
+members = [
+    # Tier 0: Core (no_std compatible)
+    "crates/rootstar-bci-core",
+
+    # Tier 1: Embedded (ESP32 firmware)
+    "crates/rootstar-bci-embedded",
+
+    # Tier 2: Native (host processing, std)
+    "crates/rootstar-bci-native",
+
+    # Tier 3: Web (WASM visualization)
+    "crates/rootstar-bci-web",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+authors = ["Kevin <kevin@k5tuck.dev>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/k5tuck/rootstar"
+homepage = "https://github.com/k5tuck/rootstar"
+documentation = "https://docs.rs/rootstar-bci"
+keywords = ["bci", "eeg", "fnirs", "brain-computer-interface", "neuroscience"]
+categories = ["embedded", "science", "no-std"]
+
+[workspace.dependencies]
+# ============================================================================
+# CORE EMBEDDED (no_std compatible)
+# ============================================================================
+
+# Hardware Abstraction Layer traits
+embedded-hal = "1.0.0"
+embedded-hal-async = "1.0.0"
+embedded-hal-bus = "0.2.0"
+embedded-io = "0.6.1"
+embedded-io-async = "0.6.1"
+
+# Serialization (no_std)
+postcard = { version = "1.0.10", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+
+# no_std collections
+heapless = "0.8.0"
+
+# Math (no_std)
+nalgebra = { version = "0.33", default-features = false, features = ["libm"] }
+micromath = "2.1.0"
+libm = "0.2.8"
+
+# CRC for protocols
+crc = "3.2.1"
+
+# Logging (embedded)
+defmt = "0.3.8"
+defmt-rtt = "0.4.1"
+log = { version = "0.4", default-features = false }
+
+# Critical sections
+critical-section = "1.1.3"
+
+# Cortex-M support (for delay functions in no_std)
+cortex-m = "0.7.7"
+cortex-m-rt = "0.7.3"
+
+# ============================================================================
+# EMBASSY ASYNC EMBEDDED
+# ============================================================================
+embassy-executor = { version = "0.6.3", default-features = false }
+embassy-time = { version = "0.3.2", default-features = false }
+embassy-sync = { version = "0.6.1", default-features = false }
+embassy-futures = { version = "0.1.1", default-features = false }
+
+# ============================================================================
+# ESP32 (for ESP-EEG base)
+# ============================================================================
+esp-hal = { version = "0.22.0", default-features = false }
+
+# ============================================================================
+# CRYPTOGRAPHY (no_std compatible)
+# ============================================================================
+chacha20poly1305 = { version = "0.10.1", default-features = false }
+sha2 = { version = "0.10.8", default-features = false }
+
+# ============================================================================
+# NATIVE/STD DEPENDENCIES
+# ============================================================================
+tokio = { version = "1.42", features = ["full"] }
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Serialization (std)
+serde_json = "1.0"
+
+# Serial/USB communication
+serialport = "4.6"
+
+# DSP / FFT
+rustfft = "6.2"
+
+# ============================================================================
+# WEB/WASM DEPENDENCIES
+# ============================================================================
+leptos = { version = "0.7", default-features = false }
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "Window", "Document", "Element", "HtmlElement",
+    "HtmlCanvasElement", "CanvasRenderingContext2d",
+    "console", "WebSocket", "BinaryType", "MessageEvent"
+] }
+js-sys = "0.3"
+gloo = "0.11"
+wgpu = { version = "23.0", default-features = false }
+serde-wasm-bindgen = "0.6"
+bytemuck = { version = "1.18", features = ["derive"] }
+
+# ============================================================================
+# NATIVE VISUALIZATION DEPENDENCIES
+# ============================================================================
+winit = "0.30"
+pollster = "0.4"
+egui = "0.30"
+egui-wgpu = "0.30"
+egui-winit = "0.30"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# ============================================================================
+# TESTING
+# ============================================================================
+proptest = "1.5"
+criterion = "0.5"
+approx = "0.5"
+
+# ============================================================================
+# INTERNAL CRATES
+# ============================================================================
+rootstar-bci-core = { path = "crates/rootstar-bci-core", default-features = false }
+rootstar-bci-embedded = { path = "crates/rootstar-bci-embedded", default-features = false }
+rootstar-bci-native = { path = "crates/rootstar-bci-native" }
+rootstar-bci-web = { path = "crates/rootstar-bci-web" }
+
+[workspace.lints.rust]
+# Safety
+unsafe_code = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+
+# Documentation
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+
+# Code quality
+unused = "warn"
+nonstandard_style = "warn"
+
+[workspace.lints.clippy]
+# Categories
+all = "warn"
+pedantic = "warn"
+nursery = "warn"
+cargo = "warn"
+
+# Specific high-value lints
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "forbid"
+unimplemented = "forbid"
+unreachable = "warn"
+
+# Embedded-specific
+large_futures = "warn"
+large_stack_frames = "warn"
+
+# Performance
+inefficient_to_string = "warn"
+trivially_copy_pass_by_ref = "warn"
+
+# Allow some pedantic lints that are too noisy
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+
+# ============================================================================
+# BUILD PROFILES
+# ============================================================================
+
+[profile.dev]
+opt-level = 1
+debug = true
+lto = false
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+# Embedded profile - optimized for size
+[profile.embedded]
+inherits = "release"
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = false
+
+# Embedded debug profile
+[profile.embedded-dev]
+inherits = "dev"
+opt-level = 1
+debug = true
+panic = "abort"

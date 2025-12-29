@@ -1,0 +1,52 @@
+[package]
+name = "rootstar-bci-web"
+description = "WASM visualization and control panel for Rootstar BCI Platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["bci", "eeg", "fnirs", "wasm", "visualization"]
+categories = ["wasm", "visualization", "web-programming"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+
+[dependencies]
+# Core types (with std feature)
+rootstar-bci-core = { workspace = true, features = ["std"] }
+
+# Leptos web framework
+leptos = { workspace = true }
+
+# WASM bindings
+wasm-bindgen = { workspace = true }
+web-sys = { workspace = true }
+js-sys = { workspace = true }
+gloo = { workspace = true }
+
+# WebGPU for 3D visualization
+wgpu = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["std", "derive"] }
+serde_json = { workspace = true }
+serde-wasm-bindgen = { workspace = true }
+
+# GPU buffer types
+bytemuck = { workspace = true }
+
+# Math (for cochlea frequency calculations)
+libm = { workspace = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[lints]
+workspace = true

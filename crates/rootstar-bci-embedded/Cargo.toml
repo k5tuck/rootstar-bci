@@ -1,0 +1,48 @@
+[package]
+name = "rootstar-bci-embedded"
+description = "Embedded drivers and acquisition for Rootstar BCI Platform (ESP32)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["bci", "eeg", "fnirs", "embedded", "esp32"]
+categories = ["embedded", "no-std", "hardware-support"]
+
+[features]
+default = []
+defmt = ["rootstar-bci-core/defmt", "dep:defmt"]
+
+[dependencies]
+# Core types
+rootstar-bci-core = { workspace = true }
+
+# Hardware abstraction
+embedded-hal = { workspace = true }
+embedded-hal-async = { workspace = true }
+embedded-hal-bus = { workspace = true }
+
+# Async embedded
+embassy-executor = { workspace = true }
+embassy-time = { workspace = true }
+embassy-sync = { workspace = true }
+embassy-futures = { workspace = true }
+
+# Cortex-M support
+cortex-m = { workspace = true }
+
+# no_std collections
+heapless = { workspace = true }
+
+# Optional defmt logging
+defmt = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Testing
+proptest = { workspace = true }
+
+[lints]
+workspace = true

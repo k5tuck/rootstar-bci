@@ -1,0 +1,42 @@
+[package]
+name = "rootstar-bci-core"
+description = "Core types, math, and protocol for Rootstar BCI Platform (no_std compatible)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords = ["bci", "eeg", "fnirs", "no-std", "embedded"]
+categories = ["embedded", "no-std", "science"]
+
+[features]
+default = []
+std = ["serde/std"]
+defmt = ["dep:defmt"]
+
+[dependencies]
+# Serialization (no_std)
+serde = { workspace = true }
+
+# no_std collections
+heapless = { workspace = true }
+
+# Optional defmt logging for embedded
+defmt = { workspace = true, optional = true }
+
+# CRC for packet checksums
+crc = { workspace = true }
+
+# no_std math functions
+libm = { workspace = true }
+
+[dev-dependencies]
+# Testing
+proptest = { workspace = true }
+approx = { workspace = true }
+
+[lints]
+workspace = true
