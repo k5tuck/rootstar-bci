@@ -77,52 +77,19 @@ espflash flash --monitor target/xtensa-esp32-espidf/embedded/rootstar-bci-embedd
 
 ## Hardware Requirements
 
-### Complete BCI Hardware Shopping List
+For the complete hardware shopping list with part numbers, suppliers, and assembly instructions, see **[HARDWARE.md](HARDWARE.md)**.
 
-#### Core Components
+### Quick Overview
 
-| Component | Part Number | Description | Quantity | Approx. Price |
-|-----------|-------------|-------------|----------|---------------|
-| **Microcontroller** | ESP32-WROOM-DA | Dual-core MCU with WiFi/BT | 1 | $10-15 |
-| **EEG ADC** | TI ADS1299 | 8-channel 24-bit biosignal ADC | 1 | $40-60 |
-| **fNIRS ADC** | TI ADS1115 | 16-bit I2C ADC module | 1 | $5-10 |
+**Estimated Total Cost:** $250-600 (depending on electrode quality and optional components)
 
-#### fNIRS Optical Components
-
-| Component | Specification | Description | Quantity | Approx. Price |
-|-----------|---------------|-------------|----------|---------------|
-| **NIR LED** | 760nm | HbR-sensitive wavelength | 2 | $5-10 |
-| **NIR LED** | 850nm | HbO2-sensitive wavelength | 2 | $5-10 |
-| **Photodetector** | OPT101 | Monolithic photodiode + amp | 2 | $8-15 |
-
-#### EEG Electrodes
-
-| Component | Specification | Description | Quantity | Approx. Price |
-|-----------|---------------|-------------|----------|---------------|
-| **EEG Electrodes** | Ag/AgCl, 10-20 system | Wet or dry electrodes | 8+ | $50-150 |
-| **Electrode Cap** | 10-20 placement | Optional: pre-positioned cap | 1 | $50-200 |
-| **Electrode Gel** | Conductive gel | For wet electrode setup | 1 | $15-25 |
-| **Reference/Ground** | Ear clip or mastoid | REF and GND electrodes | 2 | $10-20 |
-
-#### Neurostimulation (Optional)
-
-| Component | Part Number | Description | Quantity | Approx. Price |
-|-----------|-------------|-------------|----------|---------------|
-| **DAC** | DAC8564 | 8-channel 16-bit DAC | 1 | $15-25 |
-| **Current Limiter** | Howland circuit | Op-amp current source | 1 | $10-20 |
-| **Stim Electrodes** | Saline sponge | tDCS/tACS electrodes | 2 | $20-40 |
-
-#### Passive Components & Wiring
-
-| Component | Specification | Description | Quantity | Approx. Price |
-|-----------|---------------|-------------|----------|---------------|
-| **Decoupling Caps** | 100nF, 10uF | Power supply filtering | 10+ | $5 |
-| **Resistors** | Various | For biasing and limiting | Assorted | $5 |
-| **Logic Level Shifter** | 3.3V to 5V | If using 5V sensors | 1 | $3-5 |
-| **USB Cable** | USB-A to Micro-B | ESP32 connection | 1 | $5 |
-| **Jumper Wires** | Dupont | Prototyping connections | 40+ | $5 |
-| **Breadboard** | Half or full size | For prototyping | 1 | $5-10 |
-| **PCB** | Custom | For final assembly | 1 | $10-50 |
+| Category | Components | Price Range |
+|----------|------------|-------------|
+| **Core Electronics** | ESP32-WROOM-DA, ADS1299 (EEG), ADS1115 (fNIRS) | $55-85 |
+| **fNIRS Optics** | 760nm/850nm NIR LEDs, OPT101 photodetectors | $25-50 |
+| **EEG Electrodes** | Ag/AgCl electrodes (8+), conductive gel, cap | $75-395 |
+| **Neurostimulation** | DAC8564, Howland current source (optional) | $45-85 |
+| **Passive Components** | Capacitors, resistors, wiring, breadboard | $40-50 |
 
 ### GPIO Pin Assignments (ESP32)
 
