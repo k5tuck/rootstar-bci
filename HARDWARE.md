@@ -11,6 +11,7 @@ Complete shopping list for building the Rootstar BCI hardware platform.
 | Core Electronics | $55-85 | - |
 | fNIRS Optics | $25-50 | - |
 | EEG Electrodes | $75-195 | Electrode cap ($50-200) |
+| 3D Printed Headset | - | ~$100 (DIY alternative to cap) |
 | Neurostimulation | - | $45-85 |
 | Passive Components | $40-50 | - |
 
@@ -149,6 +150,229 @@ Complete shopping list for building the Rootstar BCI hardware platform.
 | 5 | P4 | Right parietal |
 | 6 | O1 | Left occipital |
 | 7 | O2 | Right occipital |
+
+---
+
+## 3D Printed Headset (DIY Option)
+
+Instead of purchasing a pre-made electrode cap, you can 3D print a custom headset. This section covers two popular form factors.
+
+### Form Factor Options
+
+#### Option A: Adjustable Band Style
+
+```
+        ┌─────────────────────────┐
+        │    Electrode Arms       │
+        │   ╱   ╱   ╱   ╱   ╱     │
+   ┌────┴───────────────────┴────┐
+   │  ══════════════════════════ │  ← Adjustable headband
+   │  ══════════════════════════ │
+   └────┬───────────────────┬────┘
+        │   ╲   ╲   ╲   ╲   │
+        │    Spring-loaded  │
+        │    electrode arms │
+        └───────────────────┘
+```
+
+**Characteristics:**
+- Flexible sizing fits most head sizes
+- Electrode arms swing out to 10-20 positions
+- Spring-loaded contacts maintain pressure
+- Electronics module clips to back
+- Easier to print and assemble
+- Better for development/prototyping
+
+#### Option B: Ergonomic Shell Style
+
+```
+         ┌─────────────┐
+        ╱               ╲
+       │   ┌─────────┐   │
+       │   │ Forehead│   │  ← Rigid contoured shell
+       │   │ sensors │   │
+        ╲  └─────────┘  ╱
+         ╲    ╭───╮    ╱
+          ╲   │PCB│   ╱     ← Integrated electronics
+           ╲  ╰───╯  ╱
+            ╲ ┌───┐ ╱
+             ╲│Ear│╱        ← Ear hooks for stability
+              └───┘
+```
+
+**Characteristics:**
+- Clean, consumer-product appearance
+- Contoured to head shape
+- Fixed electrode positions
+- Integrated electronics housing
+- Requires head size variants (S/M/L)
+- Better for finished product
+
+### 3D Printing Materials
+
+| Component | Recommended Material | Properties |
+|-----------|---------------------|------------|
+| Main frame | **PETG** | Flexible, durable, skin-safe |
+| Electrode holders | **TPU (95A)** | Soft, conforms to scalp |
+| Electronics enclosure | **PLA** or **PETG** | Rigid, easy to print |
+| Adjustment mechanisms | **PETG** | Strong, slight flexibility |
+
+**Print Settings (PETG):**
+- Layer height: 0.2mm
+- Infill: 20-30%
+- Walls: 3 perimeters
+- Nozzle temp: 230-250C
+- Bed temp: 70-80C
+
+### Additional Hardware for 3D Printed Headset
+
+| Component | Specification | Qty | Price |
+|-----------|---------------|-----|-------|
+| PETG Filament | 1kg spool | 1 | $25 |
+| TPU Filament | 250g (for electrode pads) | 1 | $15 |
+| Compression Springs | 5mm OD x 10mm, light force | 10 | $8 |
+| M3 Screws | Assorted lengths (6-20mm) | 50 | $6 |
+| M3 Heat-Set Inserts | Brass, 4mm length | 20 | $8 |
+| M3 Nuts | Standard | 20 | $3 |
+| Elastic Strap | 25mm width, adjustable | 1m | $5 |
+| Buckle/Clip | Side-release, 25mm | 2 | $3 |
+| Foam Padding | Self-adhesive, 3mm thick | 1 sheet | $5 |
+| Shielded Cable | 8-conductor, thin gauge | 2m | $12 |
+| Snap Connectors | 4mm snap for electrodes | 10 | $8 |
+
+**Additional cost for DIY headset: ~$100**
+
+### Electrode Mounting Options
+
+#### Spring-Loaded Pin Contacts (Dry)
+
+```
+    ┌───────────┐
+    │  Holder   │
+    │  (PETG)   │
+    ├───────────┤
+    │  ╔═════╗  │
+    │  ║Spring║  │  ← Compression spring
+    │  ╚══╤══╝  │
+    │     │     │
+    └─────┼─────┘
+          │
+    ┌─────┴─────┐
+    │  Contact  │    ← Gold-plated or Ag/AgCl tip
+    │   (pin)   │
+    └───────────┘
+```
+
+| Component | Part | Qty | Price |
+|-----------|------|-----|-------|
+| Pogo pins | P75-B1, gold-plated, 1mm tip | 10 | $10 |
+| Alternative | Spring-loaded test probes | 10 | $15 |
+
+#### Snap-In Cup Holders (Wet)
+
+```
+    ┌───────────────┐
+    │   Holder      │
+    │   (PETG)      │
+    │  ┌─────────┐  │
+    │  │ ○ snap  │  │  ← 4mm snap connector
+    │  │ recess  │  │
+    │  └─────────┘  │
+    └───────────────┘
+          ↓
+    ┌─────────────┐
+    │  Standard   │
+    │  Ag/AgCl    │    ← Use with conductive gel
+    │  cup elec.  │
+    └─────────────┘
+```
+
+#### Comb Electrodes (Dry, Through Hair)
+
+```
+       │ │ │ │ │
+       │ │ │ │ │      ← Conductive tines
+    ┌──┴─┴─┴─┴─┴──┐     (penetrate hair)
+    │             │
+    │   Contact   │   ← Connection point
+    │    base     │
+    └─────────────┘
+```
+
+Print comb electrodes in conductive PLA or coat with conductive paint/epoxy.
+
+| Component | Specification | Qty | Price |
+|-----------|---------------|-----|-------|
+| Conductive PLA | Proto-pasta or similar | 100g | $20 |
+| OR Conductive paint | Nickel or silver-based | 1 bottle | $15 |
+
+### Design Dimensions (10-20 System)
+
+**Head Measurement Reference:**
+
+```
+Circumference measurements:
+┌─────────────────────────────────────┐
+│  Size    │ Circumference │ Nasion-Inion │
+├──────────┼───────────────┼──────────────┤
+│  Small   │   52-54 cm    │   32-34 cm   │
+│  Medium  │   55-57 cm    │   35-36 cm   │
+│  Large   │   58-60 cm    │   37-38 cm   │
+└─────────────────────────────────────┘
+```
+
+**Electrode Position Calculations:**
+
+The 10-20 system uses percentage-based positioning:
+
+```
+Nasion ──────────────────────────────── Inion
+   │                                      │
+   │  10%   20%   20%   20%   20%   10%   │
+   │   │     │     │     │     │     │    │
+   ├───┼─────┼─────┼─────┼─────┼─────┼────┤
+   Fp  F     C     P     O    (reference points)
+```
+
+For an 8-channel system:
+- **Fp1/Fp2**: 10% from nasion, 5% lateral from midline
+- **C3/C4**: 50% from nasion (vertex), 20% lateral
+- **P3/P4**: 70% from nasion, 20% lateral
+- **O1/O2**: 90% from nasion, 5% lateral
+
+### Assembly Tips for 3D Printed Headset
+
+1. **Print test fits first** - Print small sections to verify dimensions
+2. **Use heat-set inserts** - Stronger than threading directly into plastic
+3. **Add foam padding** - Comfort and light blocking at forehead
+4. **Route wires internally** - Design channels in the frame for clean cable management
+5. **Use strain relief** - Where cables exit the headset
+6. **Make electrodes removable** - Easier to clean and replace
+7. **Consider modularity** - Separate front/back sections for easier printing
+
+### Electronics Housing Options
+
+**Option 1: Back-of-head module**
+```
+┌──────────────────┐
+│   ┌──────────┐   │
+│   │  ESP32   │   │
+│   │  ADS1299 │   │  ← Single enclosure
+│   │  Battery │   │
+│   └──────────┘   │
+└──────────────────┘
+```
+
+**Option 2: Distributed (belt + headset)**
+```
+Headset:          Belt clip:
+┌────────┐        ┌──────────┐
+│ADS1299 │───────→│  ESP32   │
+│only    │ cable  │  Battery │
+└────────┘        └──────────┘
+```
+
+Distributed option reduces headset weight and EMI from digital electronics.
 
 ---
 

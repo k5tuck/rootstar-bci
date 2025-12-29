@@ -87,9 +87,13 @@ For the complete hardware shopping list with part numbers, suppliers, and assemb
 |----------|------------|-------------|
 | **Core Electronics** | ESP32-WROOM-DA, ADS1299 (EEG), ADS1115 (fNIRS) | $55-85 |
 | **fNIRS Optics** | 760nm/850nm NIR LEDs, OPT101 photodetectors | $25-50 |
-| **EEG Electrodes** | Ag/AgCl electrodes (8+), conductive gel, cap | $75-395 |
+| **EEG Electrodes** | Ag/AgCl electrodes (8+), conductive gel | $75-195 |
+| **Headset Option A** | Pre-made electrode cap (optional) | $50-200 |
+| **Headset Option B** | 3D printed DIY headset (optional) | ~$100 |
 | **Neurostimulation** | DAC8564, Howland current source (optional) | $45-85 |
 | **Passive Components** | Capacitors, resistors, wiring, breadboard | $40-50 |
+
+See [HARDWARE.md](HARDWARE.md) for 3D printed headset designs including adjustable band and ergonomic shell form factors.
 
 ### GPIO Pin Assignments (ESP32)
 
