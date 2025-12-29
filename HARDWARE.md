@@ -374,6 +374,173 @@ Headset:          Belt clip:
 
 Distributed option reduces headset weight and EMI from digital electronics.
 
+### fNIRS Optode Integration
+
+The fNIRS optical components (LEDs and photodetectors) can be integrated into both headset form factors.
+
+#### fNIRS Design Requirements
+
+| Requirement | Specification | Notes |
+|-------------|---------------|-------|
+| Source-detector separation | **25-40mm** | Determines penetration depth (~half the separation) |
+| Light isolation | Opaque housing | Prevents direct LED→detector path |
+| Ambient light blocking | Foam seal + opaque material | Critical for signal quality |
+| Scalp contact | Flush or spring-loaded | Air gaps drastically reduce signal |
+
+#### Optode Placement
+
+For combined EEG + fNIRS, the forehead (prefrontal cortex) is ideal for fNIRS:
+
+```
+        Nasion
+           │
+      ┌────┴────┐
+     Fp1 [fNIRS] Fp2    ← fNIRS between Fp1/Fp2
+      │  ●──○   │         ● = LED, ○ = Photodetector
+      │  30mm   │         Source-detector: 30mm
+      │         │
+     C3   Cz   C4       ← EEG electrodes
+      │         │
+     P3   Pz   P4
+      │         │
+     O1   Oz   O2
+           │
+        Inion
+```
+
+**Why forehead?**
+- Less hair interference
+- Thinner skull (~6mm vs 10mm elsewhere)
+- Prefrontal cortex access (attention, executive function)
+- Natural integration point for both form factors
+
+#### Form Factor A: Modular Optode Pod (Adjustable Band)
+
+```
+      fNIRS Forehead Pod
+    ┌─────────────────────┐
+    │  ┌─────┐   ┌─────┐  │
+    │  │ LED │   │ PD  │  │  ← 30mm separation
+    │  │ 760 │   │OPT  │  │
+    │  │ 850 │   │101  │  │
+    │  └──┬──┘   └──┬──┘  │
+    │     │ wires  │      │
+    └─────┼────────┼──────┘
+          │        │
+    ══════╧════════╧══════  ← Clips to headband
+         Adjustable Band
+```
+
+**Advantages:**
+- Independent positioning from EEG electrodes
+- Easy to remove for cleaning
+- Can adjust source-detector separation
+- Simpler to prototype
+
+#### Form Factor B: Integrated Optodes (Ergonomic Shell)
+
+```
+         ┌─────────────────┐
+        ╱   ●    30mm    ○  ╲   ← Built into forehead
+       │   LED          PD   │     section of shell
+       │   ├────────────┤    │
+       │   │  Light     │    │
+       │   │  barrier   │    │   ← Internal wall blocks
+        ╲  │  (opaque)  │   ╱       direct light path
+         ╲ └────────────┘  ╱
+          ╲               ╱
+           └─────────────┘
+```
+
+**Advantages:**
+- Cleaner appearance
+- Fixed, repeatable positioning
+- Better light sealing
+- More professional look
+
+#### Optode Housing Cross-Section
+
+```
+        Opaque shell (black PETG)
+    ┌─────────────────────────────┐
+    │  ████████████████████████   │
+    │  ██┌───────────────┐████   │
+    │  ██│               │████   │  ← Component cavity
+    │  ██│   LED or PD   │████   │
+    │  ██│               │████   │
+    │  ██└───────┬───────┘████   │
+    │  ██████████│████████████   │
+    └────────────┼────────────────┘
+                 │
+    ┌────────────┴────────────┐
+    │   Translucent TPU pad   │    ← Light passes through
+    │   (conforms to skin)    │       Soft contact
+    └─────────────────────────┘
+                 │
+    ─────────────┴─────────────  Scalp
+```
+
+#### Additional Hardware for fNIRS Integration
+
+| Component | Specification | Qty | Price |
+|-----------|---------------|-----|-------|
+| Black PETG | Light-blocking housing | 100g | $8 |
+| Translucent TPU | Optical window/skin contact | 50g | $8 |
+| Light barrier foam | Closed-cell, self-adhesive | 1 sheet | $5 |
+| Heat shrink (black) | Wire light-blocking | 1m | $3 |
+
+**Additional cost for fNIRS integration: ~$25**
+
+#### fNIRS Wiring Considerations
+
+```
+LED Circuit:
+    ESP32 GPIO 25/26/27
+           │
+           ▼
+    ┌──────────────┐
+    │   Current    │    ← Limit to ~20mA per LED
+    │   Limiting   │       Use PWM for intensity control
+    │   Resistor   │
+    └──────┬───────┘
+           │
+           ▼
+    ┌──────────────┐
+    │  NIR LED     │
+    │  760/850nm   │
+    └──────────────┘
+
+Photodetector Circuit:
+    ┌──────────────┐
+    │   OPT101     │    ← Built-in transimpedance amp
+    │              │       Output: 0-5V proportional to light
+    └──────┬───────┘
+           │
+           ▼
+    ADS1115 ADC (I2C)
+           │
+           ▼
+       ESP32
+```
+
+#### Light Isolation Tips
+
+1. **Use black filament** for all optode housings
+2. **Add internal baffles** between LED and photodetector cavities
+3. **Seal edges with foam** to block ambient light
+4. **Use black heat shrink** on wires near optodes
+5. **Test in bright light** - signal should be stable
+
+#### Recommended fNIRS Configuration
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| LED drive current | 20mA | Balance brightness vs heating |
+| PWM frequency | 1kHz+ | Above flicker perception |
+| Sampling rate | 10-50 Hz | Hemodynamics are slow |
+| Source-detector distance | 30mm | Good cortical penetration |
+| Measurement cycle | 760nm → read → 850nm → read | Time-division multiplexing |
+
 ---
 
 ## Neurostimulation Components (Optional)
