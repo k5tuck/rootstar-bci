@@ -20,6 +20,7 @@
 #![allow(clippy::must_use_candidate)]
 
 pub mod bridge;
+pub mod fingerprint;
 pub mod ml;
 pub mod processing;
 pub mod sns;
@@ -31,6 +32,12 @@ pub mod viz;
 // Re-export key types
 pub use processing::fnirs::FnirsProcessor;
 pub use processing::fusion::{AlignedSample, TemporalAligner};
+
+// Re-export fingerprint types
+pub use fingerprint::{
+    EegFeatureExtractor, EegFeatures, FingerprintFusion, FnirsFeatureExtractor, FnirsFeatures,
+    FusionConfig, StimulationController, StimulationSession,
+};
 
 // Re-export SNS types
 pub use sns::{

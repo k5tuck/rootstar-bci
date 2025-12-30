@@ -44,7 +44,7 @@ postcard = { version = "1.0.10", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 
 # no_std collections
-heapless = "0.8.0"
+heapless = { version = "0.8.0", features = ["serde"] }
 
 # Math (no_std)
 nalgebra = { version = "0.33", default-features = false, features = ["libm"] }

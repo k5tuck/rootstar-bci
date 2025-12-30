@@ -41,6 +41,7 @@
 extern crate std;
 
 pub mod error;
+pub mod fingerprint;
 pub mod math;
 pub mod protocol;
 pub mod sns;
