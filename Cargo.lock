@@ -3447,6 +3447,7 @@ dependencies = [
  "embedded-hal-async",
  "embedded-hal-bus",
  "heapless",
+ "libm",
  "proptest",
  "rootstar-bci-core",
 ]

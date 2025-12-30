@@ -464,6 +464,12 @@ const MAX_EEG_CHANNELS: usize = 256;
 /// Maximum number of fNIRS channels in compact representation.
 const MAX_FNIRS_CHANNELS: usize = 128;
 
+/// Maximum number of EMG channels
+const MAX_EMG_CHANNELS: usize = 8;
+
+/// Maximum number of EDA sites
+const MAX_EDA_SITES: usize = 4;
+
 /// Complete neural fingerprint for a specific sensory experience.
 ///
 /// This is a compact representation suitable for embedded storage.
@@ -493,6 +499,47 @@ pub struct NeuralFingerprint {
     /// Neurovascular coupling lag in milliseconds per channel
     pub nv_coupling_lag_ms: HeaplessVec<i16, 128>,
 
+    // ========================================================================
+    // EMG Features (Facial Muscle Activity)
+    // ========================================================================
+
+    /// EMG RMS activation per channel (µV)
+    /// 8 channels: Zygomaticus (L/R), Corrugator (L/R), Masseter (L/R), Orbicularis (U/D)
+    pub emg_rms_activation: HeaplessVec<Fixed24_8, 8>,
+
+    /// EMG mean frequency per channel (Hz)
+    /// Higher frequency indicates more intense contraction
+    pub emg_mean_frequency: HeaplessVec<Fixed24_8, 8>,
+
+    /// EMG emotional valence score (-1.0 to 1.0)
+    /// Computed from smile vs frown muscle activity ratio
+    /// Positive = pleasure, Negative = displeasure
+    pub emg_valence_score: Fixed24_8,
+
+    /// EMG arousal score (0.0 to 1.0)
+    /// Overall facial muscle activation level
+    pub emg_arousal_score: Fixed24_8,
+
+    // ========================================================================
+    // EDA Features (Electrodermal Activity / Skin Conductance)
+    // ========================================================================
+
+    /// EDA skin conductance level (SCL) per site in µS
+    /// Tonic level representing baseline arousal
+    pub eda_scl: HeaplessVec<Fixed24_8, 4>,
+
+    /// EDA skin conductance response (SCR) count per site
+    /// Number of phasic responses detected during recording
+    pub eda_scr_count: HeaplessVec<u8, 4>,
+
+    /// EDA mean SCR amplitude per site (µS)
+    /// Average amplitude of detected responses
+    pub eda_scr_amplitude: HeaplessVec<Fixed24_8, 4>,
+
+    /// EDA autonomic arousal score (0.0 to 1.0)
+    /// Derived from SCL and SCR metrics
+    pub eda_arousal_score: Fixed24_8,
+
     /// Confidence score (0-255 mapped to 0.0-1.0)
     pub confidence: u8,
 }
@@ -509,6 +556,16 @@ impl NeuralFingerprint {
             fnirs_hbo_activation: HeaplessVec::new(),
             fnirs_hbr_activation: HeaplessVec::new(),
             nv_coupling_lag_ms: HeaplessVec::new(),
+            // EMG features
+            emg_rms_activation: HeaplessVec::new(),
+            emg_mean_frequency: HeaplessVec::new(),
+            emg_valence_score: Fixed24_8::ZERO,
+            emg_arousal_score: Fixed24_8::ZERO,
+            // EDA features
+            eda_scl: HeaplessVec::new(),
+            eda_scr_count: HeaplessVec::new(),
+            eda_scr_amplitude: HeaplessVec::new(),
+            eda_arousal_score: Fixed24_8::ZERO,
             confidence: 0,
         }
     }
@@ -581,6 +638,51 @@ impl NeuralFingerprint {
         for i in 0..len {
             let a = self.fnirs_hbo_activation[i].to_f32();
             let b = other.fnirs_hbo_activation[i].to_f32();
+            dot_product += a * b;
+            norm_a += a * a;
+            norm_b += b * b;
+        }
+
+        // Compare EMG RMS activation
+        let len = self.emg_rms_activation.len().min(other.emg_rms_activation.len());
+        for i in 0..len {
+            let a = self.emg_rms_activation[i].to_f32();
+            let b = other.emg_rms_activation[i].to_f32();
+            dot_product += a * b;
+            norm_a += a * a;
+            norm_b += b * b;
+        }
+
+        // Compare EMG valence and arousal scores
+        {
+            let a = self.emg_valence_score.to_f32();
+            let b = other.emg_valence_score.to_f32();
+            dot_product += a * b;
+            norm_a += a * a;
+            norm_b += b * b;
+        }
+        {
+            let a = self.emg_arousal_score.to_f32();
+            let b = other.emg_arousal_score.to_f32();
+            dot_product += a * b;
+            norm_a += a * a;
+            norm_b += b * b;
+        }
+
+        // Compare EDA SCL
+        let len = self.eda_scl.len().min(other.eda_scl.len());
+        for i in 0..len {
+            let a = self.eda_scl[i].to_f32();
+            let b = other.eda_scl[i].to_f32();
+            dot_product += a * b;
+            norm_a += a * a;
+            norm_b += b * b;
+        }
+
+        // Compare EDA arousal score
+        {
+            let a = self.eda_arousal_score.to_f32();
+            let b = other.eda_arousal_score.to_f32();
             dot_product += a * b;
             norm_a += a * a;
             norm_b += b * b;

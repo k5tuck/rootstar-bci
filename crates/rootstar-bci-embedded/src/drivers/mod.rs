@@ -7,9 +7,13 @@
 //! - [`fnirs_array`]: High-density fNIRS with multiplexed optode arrays
 //! - [`stim`]: Neurostimulation output (tDCS/tACS)
 //! - [`stim_matrix`]: Electrode switching matrix for multi-site stimulation
+//! - [`emg`]: Facial EMG for emotional valence detection
+//! - [`eda`]: Electrodermal activity for autonomic arousal
 
 pub mod ads1299;
 pub mod ads1299_array;
+pub mod eda;
+pub mod emg;
 pub mod fnirs;
 pub mod fnirs_array;
 pub mod stim;

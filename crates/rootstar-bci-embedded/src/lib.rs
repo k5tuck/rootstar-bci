@@ -50,3 +50,9 @@ pub use drivers::fnirs::FnirsDriver;
 pub use drivers::ads1299_array::{Ads1299Array, ArrayConfig, HdEegSample};
 pub use drivers::fnirs_array::{FnirsArray, FnirsArrayConfig, HdFnirsSample};
 pub use drivers::stim_matrix::{MatrixStimProtocol, StimMatrix};
+
+// Re-export EMG driver (facial muscle activity)
+pub use drivers::emg::{EmgDriver, EmgFeatures, EmgGain, EmgSampleRate, EmgValenceCalculator};
+
+// Re-export EDA driver (skin conductance)
+pub use drivers::eda::{EdaArrayConfig, EdaDriver, EdaError, EdaProcessor, EdaSampleRate};

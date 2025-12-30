@@ -52,6 +52,6 @@ pub use error::{Ads1299Error, FnirsError, ProcessingError, ProtocolError, StimEr
 pub use math::{BeerLambertSolver, BiquadFilter, IirFilter, MovingAverage};
 pub use protocol::{DeviceConfig, PacketHeader, PacketType};
 pub use types::{
-    EegBand, EegChannel, EegSample, Fixed24_8, FnirsChannel, FnirsSample, HemodynamicSample,
-    StimMode, StimParams, Wavelength,
+    EegBand, EegChannel, EegSample, EdaDecomposed, EdaSample, EdaSite, EmgChannel, EmgSample,
+    Fixed24_8, FnirsChannel, FnirsSample, HemodynamicSample, StimMode, StimParams, Wavelength,
 };

@@ -37,6 +37,9 @@ cortex-m = { workspace = true }
 # no_std collections
 heapless = { workspace = true }
 
+# no_std math
+libm = { workspace = true }
+
 # Optional defmt logging
 defmt = { workspace = true, optional = true }
 
