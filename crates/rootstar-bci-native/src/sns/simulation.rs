@@ -742,6 +742,7 @@ impl Default for SimulationBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rootstar_bci_core::sns::types::Finger;
 
     #[test]
     fn test_simulation_creation() {

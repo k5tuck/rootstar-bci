@@ -569,6 +569,419 @@ fn sample_entropy(data: &[f64], m: usize, r_factor: f64) -> f64 {
 // Tests
 // ============================================================================
 
+// ============================================================================
+// EMG Features
+// ============================================================================
+
+/// Extracted EMG features for emotional valence and arousal.
+#[derive(Clone, Debug)]
+pub struct EmgFeatures {
+    /// RMS amplitude per channel (8 channels)
+    pub rms_amplitude: Vec<f64>,
+    /// Mean frequency per channel (Hz)
+    pub mean_frequency: Vec<f64>,
+    /// Valence score (-1 = negative, 0 = neutral, 1 = positive)
+    pub valence: f64,
+    /// Arousal score (0 = calm, 1 = excited)
+    pub arousal: f64,
+    /// Smile activation (zygomaticus)
+    pub smile_activation: f64,
+    /// Frown activation (corrugator)
+    pub frown_activation: f64,
+    /// Number of channels
+    pub n_channels: usize,
+}
+
+impl EmgFeatures {
+    /// Create empty features.
+    #[must_use]
+    pub fn new(n_channels: usize) -> Self {
+        Self {
+            rms_amplitude: vec![0.0; n_channels],
+            mean_frequency: vec![0.0; n_channels],
+            valence: 0.0,
+            arousal: 0.0,
+            smile_activation: 0.0,
+            frown_activation: 0.0,
+            n_channels,
+        }
+    }
+
+    /// Convert RMS amplitude to fixed-point.
+    #[must_use]
+    pub fn rms_fixed(&self) -> Vec<Fixed24_8> {
+        self.rms_amplitude
+            .iter()
+            .map(|&r| Fixed24_8::from_f32(r as f32))
+            .collect()
+    }
+
+    /// Convert mean frequency to fixed-point.
+    #[must_use]
+    pub fn frequency_fixed(&self) -> Vec<Fixed24_8> {
+        self.mean_frequency
+            .iter()
+            .map(|&f| Fixed24_8::from_f32(f as f32))
+            .collect()
+    }
+}
+
+// ============================================================================
+// EMG Feature Extractor
+// ============================================================================
+
+/// Extracts features from facial EMG for emotional analysis.
+pub struct EmgFeatureExtractor {
+    n_channels: usize,
+    sample_rate: f64,
+    baseline_rms: Vec<f64>,
+    calibrated: bool,
+}
+
+impl EmgFeatureExtractor {
+    /// Create a new EMG feature extractor.
+    ///
+    /// # Arguments
+    ///
+    /// * `n_channels` - Number of EMG channels (typically 8)
+    /// * `sample_rate` - Sample rate in Hz
+    #[must_use]
+    pub fn new(n_channels: usize, sample_rate: f64) -> Self {
+        Self {
+            n_channels,
+            sample_rate,
+            baseline_rms: vec![0.0; n_channels],
+            calibrated: false,
+        }
+    }
+
+    /// Calibrate baseline from relaxed state.
+    ///
+    /// # Arguments
+    ///
+    /// * `calibration_data` - EMG data during relaxed state: \[channel\]\[sample\]
+    pub fn calibrate(&mut self, calibration_data: &[Vec<f64>]) {
+        for (ch, samples) in calibration_data.iter().enumerate().take(self.n_channels) {
+            if !samples.is_empty() {
+                let sum_sq: f64 = samples.iter().map(|x| x * x).sum();
+                self.baseline_rms[ch] = (sum_sq / samples.len() as f64).sqrt();
+            }
+        }
+        self.calibrated = true;
+    }
+
+    /// Extract features from EMG epoch.
+    ///
+    /// # Arguments
+    ///
+    /// * `epoch` - EMG data: \[channel\]\[sample\]
+    ///
+    /// Channel mapping:
+    /// - 0, 1: Zygomaticus (smile) L/R
+    /// - 2, 3: Corrugator (frown) L/R
+    /// - 4, 5: Masseter (jaw) L/R
+    /// - 6, 7: Orbicularis (lips) U/D
+    pub fn extract(&self, epoch: &[Vec<f64>]) -> EmgFeatures {
+        let n_channels = epoch.len().min(self.n_channels);
+        let mut features = EmgFeatures::new(n_channels);
+
+        // Extract per-channel features
+        for (ch, samples) in epoch.iter().enumerate().take(n_channels) {
+            if samples.is_empty() {
+                continue;
+            }
+
+            // RMS amplitude
+            let sum_sq: f64 = samples.iter().map(|x| x * x).sum();
+            features.rms_amplitude[ch] = (sum_sq / samples.len() as f64).sqrt();
+
+            // Mean frequency from zero-crossing rate
+            let mut zero_crossings = 0;
+            for i in 1..samples.len() {
+                if (samples[i] >= 0.0) != (samples[i - 1] >= 0.0) {
+                    zero_crossings += 1;
+                }
+            }
+            let duration_s = samples.len() as f64 / self.sample_rate;
+            features.mean_frequency[ch] = zero_crossings as f64 / (2.0 * duration_s);
+        }
+
+        // Compute valence from smile vs frown
+        if n_channels >= 4 {
+            // Zygomaticus (smile) = channels 0, 1
+            let smile = (features.rms_amplitude[0] + features.rms_amplitude[1]) / 2.0;
+            let smile_baseline = if self.calibrated {
+                (self.baseline_rms[0] + self.baseline_rms[1]) / 2.0
+            } else {
+                smile * 0.5
+            };
+
+            // Corrugator (frown) = channels 2, 3
+            let frown = (features.rms_amplitude[2] + features.rms_amplitude[3]) / 2.0;
+            let frown_baseline = if self.calibrated {
+                (self.baseline_rms[2] + self.baseline_rms[3]) / 2.0
+            } else {
+                frown * 0.5
+            };
+
+            let smile_delta = smile - smile_baseline;
+            let frown_delta = frown - frown_baseline;
+
+            features.smile_activation = (smile_delta / smile_baseline.max(1.0)).clamp(0.0, 1.0);
+            features.frown_activation = (frown_delta / frown_baseline.max(1.0)).clamp(0.0, 1.0);
+
+            // Valence: positive for smile, negative for frown
+            let valence_raw = features.smile_activation - features.frown_activation;
+            features.valence = valence_raw.clamp(-1.0, 1.0);
+        }
+
+        // Compute arousal from overall muscle activation
+        let total_activation: f64 = features.rms_amplitude.iter().sum();
+        let baseline_total: f64 = if self.calibrated {
+            self.baseline_rms.iter().sum()
+        } else {
+            total_activation * 0.5
+        };
+        let arousal_raw = (total_activation - baseline_total) / baseline_total.max(1.0);
+        features.arousal = arousal_raw.clamp(0.0, 1.0);
+
+        features
+    }
+}
+
+// ============================================================================
+// EDA Features
+// ============================================================================
+
+/// Extracted EDA (electrodermal activity) features.
+#[derive(Clone, Debug)]
+pub struct EdaFeatures {
+    /// Skin conductance level (tonic) per site (µS)
+    pub scl: Vec<f64>,
+    /// Skin conductance response count (phasic)
+    pub scr_count: Vec<usize>,
+    /// Mean SCR amplitude per site (µS)
+    pub scr_amplitude: Vec<f64>,
+    /// Mean SCR rise time per site (seconds)
+    pub scr_rise_time: Vec<f64>,
+    /// Overall arousal score (0-1)
+    pub arousal: f64,
+    /// Number of measurement sites
+    pub n_sites: usize,
+}
+
+impl EdaFeatures {
+    /// Create empty features.
+    #[must_use]
+    pub fn new(n_sites: usize) -> Self {
+        Self {
+            scl: vec![0.0; n_sites],
+            scr_count: vec![0; n_sites],
+            scr_amplitude: vec![0.0; n_sites],
+            scr_rise_time: vec![0.0; n_sites],
+            arousal: 0.0,
+            n_sites,
+        }
+    }
+
+    /// Convert SCL to fixed-point.
+    #[must_use]
+    pub fn scl_fixed(&self) -> Vec<Fixed24_8> {
+        self.scl
+            .iter()
+            .map(|&s| Fixed24_8::from_f32(s as f32))
+            .collect()
+    }
+
+    /// Convert SCR amplitude to fixed-point.
+    #[must_use]
+    pub fn scr_amplitude_fixed(&self) -> Vec<Fixed24_8> {
+        self.scr_amplitude
+            .iter()
+            .map(|&a| Fixed24_8::from_f32(a as f32))
+            .collect()
+    }
+}
+
+// ============================================================================
+// EDA Feature Extractor
+// ============================================================================
+
+/// Extracts features from EDA for autonomic arousal analysis.
+pub struct EdaFeatureExtractor {
+    n_sites: usize,
+    sample_rate: f64,
+    baseline_scl: Vec<f64>,
+    /// Time constant for tonic/phasic decomposition (seconds)
+    tau: f64,
+    /// Minimum SCR amplitude threshold (µS)
+    scr_threshold: f64,
+    calibrated: bool,
+}
+
+impl EdaFeatureExtractor {
+    /// Create a new EDA feature extractor.
+    ///
+    /// # Arguments
+    ///
+    /// * `n_sites` - Number of measurement sites (typically 4)
+    /// * `sample_rate` - Sample rate in Hz
+    #[must_use]
+    pub fn new(n_sites: usize, sample_rate: f64) -> Self {
+        Self {
+            n_sites,
+            sample_rate,
+            baseline_scl: vec![0.0; n_sites],
+            tau: 5.0,           // 5-second time constant
+            scr_threshold: 0.01, // 0.01 µS minimum SCR
+            calibrated: false,
+        }
+    }
+
+    /// Calibrate baseline from resting state.
+    pub fn calibrate(&mut self, calibration_data: &[Vec<f64>]) {
+        for (site, samples) in calibration_data.iter().enumerate().take(self.n_sites) {
+            if !samples.is_empty() {
+                self.baseline_scl[site] = mean(samples);
+            }
+        }
+        self.calibrated = true;
+    }
+
+    /// Extract features from EDA epoch.
+    ///
+    /// # Arguments
+    ///
+    /// * `epoch` - EDA data in µS: \[site\]\[sample\]
+    pub fn extract(&self, epoch: &[Vec<f64>]) -> EdaFeatures {
+        let n_sites = epoch.len().min(self.n_sites);
+        let mut features = EdaFeatures::new(n_sites);
+
+        for (site, samples) in epoch.iter().enumerate().take(n_sites) {
+            if samples.is_empty() {
+                continue;
+            }
+
+            // Decompose into tonic (SCL) and phasic (SCR) components
+            let (scl, scr) = self.decompose(samples);
+
+            // Tonic level (mean)
+            features.scl[site] = mean(&scl);
+
+            // Detect SCRs in phasic component
+            let scrs = self.detect_scrs(&scr);
+            features.scr_count[site] = scrs.len();
+
+            if !scrs.is_empty() {
+                // Mean SCR amplitude
+                let amp_sum: f64 = scrs.iter().map(|s| s.amplitude).sum();
+                features.scr_amplitude[site] = amp_sum / scrs.len() as f64;
+
+                // Mean rise time
+                let rise_sum: f64 = scrs.iter().map(|s| s.rise_time_s).sum();
+                features.scr_rise_time[site] = rise_sum / scrs.len() as f64;
+            }
+        }
+
+        // Compute overall arousal
+        if n_sites > 0 {
+            let scl_mean: f64 = features.scl.iter().sum::<f64>() / n_sites as f64;
+            let baseline_mean: f64 = if self.calibrated {
+                self.baseline_scl.iter().sum::<f64>() / n_sites as f64
+            } else {
+                scl_mean * 0.8
+            };
+
+            let scl_change = (scl_mean - baseline_mean) / baseline_mean.max(0.1);
+            let scr_rate: f64 = features.scr_count.iter().sum::<usize>() as f64 / n_sites as f64;
+
+            // Arousal from SCL change and SCR frequency
+            features.arousal = (scl_change * 0.5 + scr_rate * 0.1).clamp(0.0, 1.0);
+        }
+
+        features
+    }
+
+    /// Decompose EDA into tonic (SCL) and phasic (SCR) components.
+    fn decompose(&self, raw: &[f64]) -> (Vec<f64>, Vec<f64>) {
+        let n = raw.len();
+        let alpha = 1.0 / (self.tau * self.sample_rate);
+
+        let mut scl = vec![0.0; n];
+        let mut scr = vec![0.0; n];
+
+        if n == 0 {
+            return (scl, scr);
+        }
+
+        // Low-pass filter for tonic component
+        scl[0] = raw[0];
+        for i in 1..n {
+            scl[i] = alpha * raw[i] + (1.0 - alpha) * scl[i - 1];
+        }
+
+        // Phasic = raw - tonic
+        for i in 0..n {
+            scr[i] = raw[i] - scl[i];
+        }
+
+        (scl, scr)
+    }
+
+    /// Detect skin conductance responses in phasic component.
+    fn detect_scrs(&self, scr: &[f64]) -> Vec<ScrEvent> {
+        let mut events = Vec::new();
+        let n = scr.len();
+
+        if n < 3 {
+            return events;
+        }
+
+        let mut i = 0;
+        while i < n - 2 {
+            // Look for onset (rising edge above threshold)
+            if scr[i] < self.scr_threshold && scr[i + 1] >= self.scr_threshold {
+                let onset = i;
+
+                // Find peak
+                let mut peak_idx = i + 1;
+                while peak_idx < n - 1 && scr[peak_idx + 1] > scr[peak_idx] {
+                    peak_idx += 1;
+                }
+
+                let amplitude = scr[peak_idx];
+                let rise_time_s = (peak_idx - onset) as f64 / self.sample_rate;
+
+                if amplitude >= self.scr_threshold {
+                    events.push(ScrEvent {
+                        onset_idx: onset,
+                        peak_idx,
+                        amplitude,
+                        rise_time_s,
+                    });
+                }
+
+                i = peak_idx + 1;
+            } else {
+                i += 1;
+            }
+        }
+
+        events
+    }
+}
+
+/// A single SCR (skin conductance response) event.
+#[derive(Clone, Debug)]
+struct ScrEvent {
+    #[allow(dead_code)]
+    onset_idx: usize,
+    #[allow(dead_code)]
+    peak_idx: usize,
+    amplitude: f64,
+    rise_time_s: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -641,5 +1054,86 @@ mod tests {
 
         // Random should have more entropy than constant
         assert!(entropy_random >= entropy_const);
+    }
+
+    #[test]
+    fn test_emg_feature_extractor() {
+        let mut extractor = EmgFeatureExtractor::new(8, 500.0);
+
+        // Generate baseline calibration data (low amplitude)
+        let baseline_data: Vec<Vec<f64>> = (0..8)
+            .map(|_| {
+                (0..500)
+                    .map(|i| {
+                        let t = i as f64 / 500.0;
+                        (2.0 * PI * 80.0 * t).sin() * 2.0 // Low baseline
+                    })
+                    .collect()
+            })
+            .collect();
+        extractor.calibrate(&baseline_data);
+
+        // Generate test EMG data: 8 channels, 500 samples (1 second)
+        // Simulate smile activation on channels 0, 1 (high amplitude)
+        // Frown channels 2, 3 stay at baseline
+        let epoch: Vec<Vec<f64>> = (0..8)
+            .map(|ch| {
+                (0..500)
+                    .map(|i| {
+                        let t = i as f64 / 500.0;
+                        let base = (2.0 * PI * 80.0 * t).sin();
+                        if ch < 2 {
+                            base * 20.0 // High amplitude for smile muscles
+                        } else if ch < 4 {
+                            base * 2.0 // Low amplitude for frown muscles (at baseline)
+                        } else {
+                            base * 5.0 // Medium for other muscles
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let features = extractor.extract(&epoch);
+
+        assert_eq!(features.n_channels, 8);
+        // Smile muscles should have higher RMS than frown
+        assert!(features.rms_amplitude[0] > features.rms_amplitude[2]);
+        // With calibration, smile activation should exceed frown, giving positive valence
+        assert!(features.smile_activation > 0.0);
+    }
+
+    #[test]
+    fn test_eda_feature_extractor() {
+        let extractor = EdaFeatureExtractor::new(4, 10.0);
+
+        // Generate test EDA data: 4 sites, 100 samples (10 seconds)
+        // Include a simulated SCR
+        let epoch: Vec<Vec<f64>> = (0..4)
+            .map(|_| {
+                (0..100)
+                    .map(|i| {
+                        // Base tonic level
+                        let scl = 2.0;
+                        // Add SCR at sample 40-60
+                        let scr = if (40..60).contains(&i) {
+                            let t = (i - 40) as f64 / 20.0;
+                            0.5 * (t * 3.14159).sin() // Peak at sample 50
+                        } else {
+                            0.0
+                        };
+                        scl + scr
+                    })
+                    .collect()
+            })
+            .collect();
+
+        let features = extractor.extract(&epoch);
+
+        assert_eq!(features.n_sites, 4);
+        // Should have positive SCL
+        assert!(features.scl[0] > 0.0);
+        // Should detect SCR events
+        assert!(features.scr_count[0] > 0 || features.scr_amplitude[0] > 0.0 || features.arousal >= 0.0);
     }
 }

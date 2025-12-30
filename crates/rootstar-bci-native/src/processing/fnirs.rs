@@ -188,6 +188,7 @@ impl HemodynamicFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rootstar_bci_core::types::FnirsChannel;
 
     #[test]
     fn test_fnirs_processor() {
