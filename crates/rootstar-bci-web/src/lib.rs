@@ -27,6 +27,12 @@ pub struct BciApp {
     topomap: viz::TopomapRenderer,
     /// fNIRS heatmap renderer
     fnirs_map: viz::FnirsMapRenderer,
+    /// EMG visualization renderer
+    emg: viz::EmgRenderer,
+    /// EDA visualization renderer
+    eda: viz::EdaRenderer,
+    /// VR Preview (integrated view)
+    vr_preview: viz::VrPreviewRenderer,
     /// Stimulation control panel
     control_panel: control::StimControlPanel,
     /// Connection state
@@ -41,12 +47,18 @@ impl BciApp {
         let timeseries = viz::TimeseriesRenderer::new()?;
         let topomap = viz::TopomapRenderer::new()?;
         let fnirs_map = viz::FnirsMapRenderer::new()?;
+        let emg = viz::EmgRenderer::new()?;
+        let eda = viz::EdaRenderer::new()?;
+        let vr_preview = viz::VrPreviewRenderer::new()?;
         let control_panel = control::StimControlPanel::new();
 
         Ok(Self {
             timeseries,
             topomap,
             fnirs_map,
+            emg,
+            eda,
+            vr_preview,
             control_panel,
             connected: false,
         })
@@ -146,11 +158,69 @@ impl BciApp {
         Ok(())
     }
 
+    /// Push EMG RMS values (8 channels in µV)
+    pub fn push_emg_rms(&mut self, channels: &[f32]) -> Result<(), JsValue> {
+        self.emg.push_rms(channels)?;
+        Ok(())
+    }
+
+    /// Push raw EDA values directly (4 sites in µS)
+    pub fn push_eda_raw(&mut self, sites: &[f32]) -> Result<(), JsValue> {
+        self.eda.push_raw(sites)?;
+        Ok(())
+    }
+
+    /// Push EDA decomposed values (SCL/SCR)
+    ///
+    /// `is_scr_peak` is a bitmask indicating which sites have an SCR peak.
+    pub fn push_eda_decomposed(&mut self, scl: &[f32], scr: &[f32], is_scr_peak: u8) -> Result<(), JsValue> {
+        self.eda.push_decomposed(scl, scr, is_scr_peak)?;
+        Ok(())
+    }
+
+    /// Set VR preview EEG band power
+    pub fn set_vr_eeg_bands(&mut self, delta: f32, theta: f32, alpha: f32, beta: f32, gamma: f32) {
+        self.vr_preview.set_eeg_band_power(delta, theta, alpha, beta, gamma);
+    }
+
+    /// Set VR preview EEG topography
+    pub fn set_vr_eeg_topography(&mut self, values: &[f32]) {
+        self.vr_preview.set_eeg_topography(values);
+    }
+
+    /// Set VR preview fNIRS data
+    pub fn set_vr_fnirs(&mut self, hbo: &[f32], hbr: &[f32]) {
+        self.vr_preview.set_fnirs(hbo, hbr);
+    }
+
+    /// Set VR preview EMG data
+    pub fn set_vr_emg(&mut self, rms: &[f32], valence: f32, arousal: f32) {
+        self.vr_preview.set_emg(rms, valence, arousal);
+    }
+
+    /// Set VR preview EDA data
+    pub fn set_vr_eda(&mut self, scl: &[f32], arousal: f32) {
+        self.vr_preview.set_eda(scl, arousal);
+    }
+
+    /// Set VR preview fingerprint state
+    pub fn set_vr_fingerprint(&mut self, similarity: f32, target: &str, modality: &str) {
+        self.vr_preview.set_fingerprint_state(similarity, target, modality);
+    }
+
+    /// Tick VR preview animation
+    pub fn tick_vr_preview(&mut self, dt: f64) {
+        self.vr_preview.tick(dt);
+    }
+
     /// Render all visualizations
     pub fn render(&mut self) -> Result<(), JsValue> {
         self.timeseries.render()?;
         self.topomap.render()?;
         self.fnirs_map.render()?;
+        self.emg.render()?;
+        self.eda.render()?;
+        self.vr_preview.render()?;
         Ok(())
     }
 
@@ -177,6 +247,21 @@ impl BciApp {
     /// Get the fNIRS map canvas element
     pub fn get_fnirs_canvas(&self) -> web_sys::HtmlCanvasElement {
         self.fnirs_map.canvas()
+    }
+
+    /// Get the EMG canvas element
+    pub fn get_emg_canvas(&self) -> web_sys::HtmlCanvasElement {
+        self.emg.canvas()
+    }
+
+    /// Get the EDA canvas element
+    pub fn get_eda_canvas(&self) -> web_sys::HtmlCanvasElement {
+        self.eda.canvas()
+    }
+
+    /// Get the VR preview canvas element
+    pub fn get_vr_preview_canvas(&self) -> web_sys::HtmlCanvasElement {
+        self.vr_preview.canvas()
     }
 }
 

@@ -1,14 +1,20 @@
 //! Visualization modules for BCI data
 //!
-//! Provides real-time rendering of EEG and fNIRS data.
+//! Provides real-time rendering of EEG, fNIRS, EMG, and EDA data.
 
+pub mod eda;
+pub mod emg;
 pub mod fnirs_map;
 pub mod timeseries;
 pub mod topomap;
+pub mod vr_preview;
 
+pub use eda::EdaRenderer;
+pub use emg::EmgRenderer;
 pub use fnirs_map::FnirsMapRenderer;
 pub use timeseries::TimeseriesRenderer;
 pub use topomap::TopomapRenderer;
+pub use vr_preview::VrPreviewRenderer;
 
 use wasm_bindgen::prelude::*;
 

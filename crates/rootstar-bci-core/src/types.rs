@@ -754,6 +754,394 @@ impl defmt::Format for StimParams {
 }
 
 // ============================================================================
+// EMG (Electromyography) Types
+// ============================================================================
+
+/// EMG channel identifier for facial muscle measurements.
+///
+/// EMG channels target specific facial muscles relevant for sensory
+/// experience detection (taste, smell, emotion).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum EmgChannel {
+    /// Zygomaticus major (smile muscle) - left
+    ZygomaticusL = 0,
+    /// Zygomaticus major (smile muscle) - right
+    ZygomaticusR = 1,
+    /// Corrugator supercilii (frown muscle) - left
+    CorrugatorL = 2,
+    /// Corrugator supercilii (frown muscle) - right
+    CorrugatorR = 3,
+    /// Masseter (jaw muscle) - left
+    MasseterL = 4,
+    /// Masseter (jaw muscle) - right
+    MasseterR = 5,
+    /// Orbicularis oris (lip muscle) - upper
+    OrbicularisU = 6,
+    /// Orbicularis oris (lip muscle) - lower
+    OrbicularisD = 7,
+}
+
+impl EmgChannel {
+    /// All channels in order
+    pub const ALL: [Self; 8] = [
+        Self::ZygomaticusL, Self::ZygomaticusR,
+        Self::CorrugatorL, Self::CorrugatorR,
+        Self::MasseterL, Self::MasseterR,
+        Self::OrbicularisU, Self::OrbicularisD,
+    ];
+
+    /// Number of channels
+    pub const COUNT: usize = 8;
+
+    /// Get the array index for this channel
+    #[inline]
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Get channel from index (returns None if out of range)
+    #[inline]
+    #[must_use]
+    pub const fn from_index(index: usize) -> Option<Self> {
+        match index {
+            0 => Some(Self::ZygomaticusL),
+            1 => Some(Self::ZygomaticusR),
+            2 => Some(Self::CorrugatorL),
+            3 => Some(Self::CorrugatorR),
+            4 => Some(Self::MasseterL),
+            5 => Some(Self::MasseterR),
+            6 => Some(Self::OrbicularisU),
+            7 => Some(Self::OrbicularisD),
+            _ => None,
+        }
+    }
+
+    /// Get the muscle name for this channel
+    #[inline]
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ZygomaticusL => "Zyg-L",
+            Self::ZygomaticusR => "Zyg-R",
+            Self::CorrugatorL => "Cor-L",
+            Self::CorrugatorR => "Cor-R",
+            Self::MasseterL => "Mas-L",
+            Self::MasseterR => "Mas-R",
+            Self::OrbicularisU => "Orb-U",
+            Self::OrbicularisD => "Orb-D",
+        }
+    }
+
+    /// Get full muscle name
+    #[inline]
+    #[must_use]
+    pub const fn full_name(self) -> &'static str {
+        match self {
+            Self::ZygomaticusL => "Zygomaticus Major Left",
+            Self::ZygomaticusR => "Zygomaticus Major Right",
+            Self::CorrugatorL => "Corrugator Supercilii Left",
+            Self::CorrugatorR => "Corrugator Supercilii Right",
+            Self::MasseterL => "Masseter Left",
+            Self::MasseterR => "Masseter Right",
+            Self::OrbicularisU => "Orbicularis Oris Upper",
+            Self::OrbicularisD => "Orbicularis Oris Lower",
+        }
+    }
+
+    /// Check if this channel is on the left side
+    #[inline]
+    #[must_use]
+    pub const fn is_left(self) -> bool {
+        matches!(self, Self::ZygomaticusL | Self::CorrugatorL | Self::MasseterL)
+    }
+
+    /// Check if this channel is on the right side
+    #[inline]
+    #[must_use]
+    pub const fn is_right(self) -> bool {
+        matches!(self, Self::ZygomaticusR | Self::CorrugatorR | Self::MasseterR)
+    }
+
+    /// Get the associated emotional valence for this muscle
+    /// Positive = smile/pleasure, Negative = frown/displeasure
+    #[inline]
+    #[must_use]
+    pub const fn valence(self) -> i8 {
+        match self {
+            Self::ZygomaticusL | Self::ZygomaticusR => 1,  // Smile
+            Self::CorrugatorL | Self::CorrugatorR => -1,   // Frown
+            Self::MasseterL | Self::MasseterR => 0,        // Neutral (chewing)
+            Self::OrbicularisU | Self::OrbicularisD => 0,  // Neutral (lip movement)
+        }
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for EmgChannel {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "{}", self.name());
+    }
+}
+
+/// Single EMG sample containing all channels.
+///
+/// EMG measures electrical activity from facial muscles at high sample rates
+/// (500-1000 Hz). Values represent muscle activation in microvolts.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EmgSample {
+    /// Timestamp in microseconds since device boot
+    pub timestamp_us: u64,
+    /// Channel values in microvolts (Q24.8 fixed-point)
+    pub channels: [Fixed24_8; 8],
+    /// Sequence number for packet ordering/loss detection
+    pub sequence: u32,
+}
+
+impl EmgSample {
+    /// Create a new sample with zero values
+    #[inline]
+    #[must_use]
+    pub const fn new(timestamp_us: u64, sequence: u32) -> Self {
+        Self {
+            timestamp_us,
+            channels: [Fixed24_8::ZERO; 8],
+            sequence,
+        }
+    }
+
+    /// Get the value for a specific channel
+    #[inline]
+    #[must_use]
+    pub fn channel(&self, ch: EmgChannel) -> Fixed24_8 {
+        self.channels[ch.index()]
+    }
+
+    /// Set the value for a specific channel
+    #[inline]
+    pub fn set_channel(&mut self, ch: EmgChannel, value: Fixed24_8) {
+        self.channels[ch.index()] = value;
+    }
+
+    /// Compute RMS (root mean square) activation across all channels
+    #[inline]
+    #[must_use]
+    pub fn rms_activation(&self) -> Fixed24_8 {
+        let mut sum_sq = 0i64;
+        for &val in &self.channels {
+            let v = val.to_raw() as i64;
+            sum_sq += v * v;
+        }
+        let mean_sq = sum_sq / 8;
+        let rms = libm::sqrtf(mean_sq as f32 / 65536.0); // Adjust for Q24.8
+        Fixed24_8::from_f32(rms)
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for EmgSample {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "EMG[{}]@{}us", self.sequence, self.timestamp_us);
+    }
+}
+
+// ============================================================================
+// EDA (Electrodermal Activity) Types
+// ============================================================================
+
+/// EDA measurement site.
+///
+/// Electrodermal activity is typically measured at sites with high
+/// sweat gland density.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum EdaSite {
+    /// Palmar (palm) - highest sweat gland density
+    PalmarL = 0,
+    /// Palmar (palm) - right hand
+    PalmarR = 1,
+    /// Thenar (thumb base)
+    ThenarL = 2,
+    /// Thenar (thumb base) - right hand
+    ThenarR = 3,
+}
+
+impl EdaSite {
+    /// All sites in order
+    pub const ALL: [Self; 4] = [
+        Self::PalmarL, Self::PalmarR,
+        Self::ThenarL, Self::ThenarR,
+    ];
+
+    /// Number of sites
+    pub const COUNT: usize = 4;
+
+    /// Get the array index for this site
+    #[inline]
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Get site name
+    #[inline]
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::PalmarL => "Palm-L",
+            Self::PalmarR => "Palm-R",
+            Self::ThenarL => "Then-L",
+            Self::ThenarR => "Then-R",
+        }
+    }
+
+    /// Get site from index
+    #[inline]
+    #[must_use]
+    pub const fn from_index(index: usize) -> Option<Self> {
+        match index {
+            0 => Some(Self::PalmarL),
+            1 => Some(Self::PalmarR),
+            2 => Some(Self::ThenarL),
+            3 => Some(Self::ThenarR),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for EdaSite {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "{}", self.name());
+    }
+}
+
+/// Single EDA sample with skin conductance measurements.
+///
+/// EDA measures skin conductance in microsiemens (µS). The signal has two
+/// components:
+/// - Tonic: Slow baseline level (SCL - Skin Conductance Level)
+/// - Phasic: Fast responses to stimuli (SCR - Skin Conductance Response)
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EdaSample {
+    /// Timestamp in microseconds since device boot
+    pub timestamp_us: u64,
+    /// Raw skin conductance values per site in micro-siemens (µS, Q24.8)
+    pub conductance: [Fixed24_8; 4],
+    /// Sequence number for packet ordering/loss detection
+    pub sequence: u32,
+}
+
+impl EdaSample {
+    /// Create a new sample with zero values
+    #[inline]
+    #[must_use]
+    pub const fn new(timestamp_us: u64, sequence: u32) -> Self {
+        Self {
+            timestamp_us,
+            conductance: [Fixed24_8::ZERO; 4],
+            sequence,
+        }
+    }
+
+    /// Get the value for a specific site
+    #[inline]
+    #[must_use]
+    pub fn site(&self, site: EdaSite) -> Fixed24_8 {
+        self.conductance[site.index()]
+    }
+
+    /// Set the value for a specific site
+    #[inline]
+    pub fn set_site(&mut self, site: EdaSite, value: Fixed24_8) {
+        self.conductance[site.index()] = value;
+    }
+
+    /// Get mean conductance across all sites
+    #[inline]
+    #[must_use]
+    pub fn mean_conductance(&self) -> Fixed24_8 {
+        let sum: i32 = self.conductance.iter().map(|c| c.to_raw()).sum();
+        Fixed24_8::from_raw(sum / 4)
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for EdaSample {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "EDA[{}]@{}us", self.sequence, self.timestamp_us);
+    }
+}
+
+/// Processed EDA with tonic/phasic decomposition.
+///
+/// The skin conductance signal is decomposed into:
+/// - SCL (Skin Conductance Level): Tonic, slow-varying baseline
+/// - SCR (Skin Conductance Response): Phasic, event-related peaks
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EdaDecomposed {
+    /// Timestamp in microseconds
+    pub timestamp_us: u64,
+    /// Measurement site
+    pub site: EdaSite,
+    /// Tonic level (SCL) in µS (Q24.8)
+    pub scl: Fixed24_8,
+    /// Phasic response (SCR) in µS (Q24.8)
+    pub scr: Fixed24_8,
+    /// SCR amplitude (peak height) if response detected
+    pub scr_amplitude: Fixed24_8,
+    /// SCR rise time in milliseconds (0 if no response)
+    pub scr_rise_time_ms: u16,
+}
+
+impl EdaDecomposed {
+    /// Create a new decomposed EDA sample
+    #[inline]
+    #[must_use]
+    pub const fn new(timestamp_us: u64, site: EdaSite, scl: Fixed24_8, scr: Fixed24_8) -> Self {
+        Self {
+            timestamp_us,
+            site,
+            scl,
+            scr,
+            scr_amplitude: Fixed24_8::ZERO,
+            scr_rise_time_ms: 0,
+        }
+    }
+
+    /// Check if a significant SCR (skin conductance response) is present
+    ///
+    /// A typical threshold is 0.01-0.05 µS for a significant response.
+    #[inline]
+    #[must_use]
+    pub fn has_response(&self) -> bool {
+        self.scr_amplitude.to_f32() >= 0.01
+    }
+
+    /// Calculate arousal level (0.0 to 1.0) based on SCL
+    ///
+    /// Typical resting SCL is 2-20 µS, with arousal increasing the level.
+    #[inline]
+    #[must_use]
+    pub fn arousal_level(&self) -> f32 {
+        let scl = self.scl.to_f32();
+        // Normalize: 2 µS = 0.0, 20 µS = 1.0
+        ((scl - 2.0) / 18.0).clamp(0.0, 1.0)
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for EdaDecomposed {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(
+            f, "EDA@{}us: SCL={}, SCR={}",
+            self.timestamp_us, self.scl, self.scr
+        );
+    }
+}
+
+// ============================================================================
 // EEG Frequency Bands
 // ============================================================================
 

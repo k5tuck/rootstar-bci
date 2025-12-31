@@ -7,6 +7,13 @@
 //! - Stimulation output driver (DAC)
 //! - Coordinated acquisition scheduler
 //!
+//! # Neural Fingerprint System (Phase 2)
+//!
+//! High-density acquisition and stimulation for neural fingerprinting:
+//! - Daisy-chained ADS1299 arrays (8-256 EEG channels)
+//! - Multiplexed fNIRS optode arrays (4-128 channels)
+//! - Electrode switching matrix (8×8 = 64 electrodes)
+//!
 //! # Hardware Requirements
 //!
 //! - ESP32-WROOM-DA (as used in ESP-EEG)
@@ -22,6 +29,7 @@
 //! I2C (fNIRS):    SDA=21, SCL=22
 //! PWM (LEDs):     GPIO 25, 26, 27
 //! DAC (Stim):     GPIO 32, 33
+//! Matrix:         I2C via MCP23017 expanders
 //! Status LED:     GPIO 17
 //! ```
 
@@ -34,6 +42,17 @@
 
 pub mod drivers;
 
-// Re-export driver types
+// Re-export driver types (basic single-chip)
 pub use drivers::ads1299::{Ads1299, Gain, SampleRate};
 pub use drivers::fnirs::FnirsDriver;
+
+// Re-export high-density array drivers (Phase 2)
+pub use drivers::ads1299_array::{Ads1299Array, ArrayConfig, HdEegSample};
+pub use drivers::fnirs_array::{FnirsArray, FnirsArrayConfig, HdFnirsSample};
+pub use drivers::stim_matrix::{MatrixStimProtocol, StimMatrix};
+
+// Re-export EMG driver (facial muscle activity)
+pub use drivers::emg::{EmgDriver, EmgFeatures, EmgGain, EmgSampleRate, EmgValenceCalculator};
+
+// Re-export EDA driver (skin conductance)
+pub use drivers::eda::{EdaArrayConfig, EdaDriver, EdaError, EdaProcessor, EdaSampleRate};
