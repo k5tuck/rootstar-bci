@@ -6,11 +6,98 @@
 //! - Self-synchronizing with sync bytes
 //! - Error-detecting with XOR checksum
 //! - Extensible via packet type field
+//! - Multi-device aware with device identifiers
+//!
+//! # Protocol Versions
+//!
+//! - **V1 (Legacy)**: 8-byte header without device_id
+//! - **V2 (Current)**: 12-byte header with device_id for multi-device support
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::ProtocolError;
 use crate::types::{EegSample, FnirsSample, Fixed24_8, StimParams, FnirsChannel};
+
+// ============================================================================
+// Device Identification
+// ============================================================================
+
+/// Unique device identifier for multi-device support.
+///
+/// Each BCI device has a unique 4-byte identifier that is included in all
+/// packets. This allows the host to distinguish data from multiple devices
+/// and route commands to specific devices.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub struct DeviceId([u8; 4]);
+
+impl DeviceId {
+    /// Broadcast device ID (all devices).
+    pub const BROADCAST: Self = Self([0xFF, 0xFF, 0xFF, 0xFF]);
+
+    /// Null/unassigned device ID.
+    pub const NULL: Self = Self([0x00, 0x00, 0x00, 0x00]);
+
+    /// Create a device ID from raw bytes.
+    #[inline]
+    #[must_use]
+    pub const fn from_bytes(bytes: [u8; 4]) -> Self {
+        Self(bytes)
+    }
+
+    /// Create a device ID from a u32.
+    #[inline]
+    #[must_use]
+    pub const fn from_u32(value: u32) -> Self {
+        Self(value.to_le_bytes())
+    }
+
+    /// Get the raw bytes.
+    #[inline]
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 4] {
+        &self.0
+    }
+
+    /// Convert to u32.
+    #[inline]
+    #[must_use]
+    pub const fn as_u32(&self) -> u32 {
+        u32::from_le_bytes(self.0)
+    }
+
+    /// Check if this is the broadcast ID.
+    #[inline]
+    #[must_use]
+    pub const fn is_broadcast(&self) -> bool {
+        self.0[0] == 0xFF && self.0[1] == 0xFF && self.0[2] == 0xFF && self.0[3] == 0xFF
+    }
+
+    /// Check if this is the null ID.
+    #[inline]
+    #[must_use]
+    pub const fn is_null(&self) -> bool {
+        self.0[0] == 0x00 && self.0[1] == 0x00 && self.0[2] == 0x00 && self.0[3] == 0x00
+    }
+
+    /// Generate a device ID from MAC address (last 4 bytes).
+    #[must_use]
+    pub fn from_mac(mac: &[u8; 6]) -> Self {
+        Self([mac[2], mac[3], mac[4], mac[5]])
+    }
+}
+
+impl core::fmt::Display for DeviceId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:02X}{:02X}{:02X}{:02X}", self.0[0], self.0[1], self.0[2], self.0[3])
+    }
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for DeviceId {
+    fn format(&self, f: defmt::Formatter) {
+        defmt::write!(f, "{:02X}{:02X}{:02X}{:02X}", self.0[0], self.0[1], self.0[2], self.0[3]);
+    }
+}
 
 // ============================================================================
 // Packet Types
@@ -131,10 +218,10 @@ impl defmt::Format for PacketType {
 }
 
 // ============================================================================
-// Packet Header
+// Packet Header (V1 - Legacy)
 // ============================================================================
 
-/// Packet header structure.
+/// Legacy packet header structure (V1, without device_id).
 ///
 /// All packets begin with this header:
 /// - 2 sync bytes (0xA5, 0x5A) for frame alignment
@@ -245,6 +332,190 @@ impl PacketHeader {
         }
 
         Ok(header)
+    }
+}
+
+// ============================================================================
+// Packet Header V2 (Multi-Device Support)
+// ============================================================================
+
+/// Extended packet header with device identification (V2).
+///
+/// Format:
+/// - 2 sync bytes (0xA5, 0xA6) for V2 frame alignment
+/// - 4 bytes device_id
+/// - 1 byte packet type
+/// - 2 bytes sequence number (little-endian)
+/// - 2 bytes payload length (little-endian)
+/// - 1 byte header checksum
+///
+/// Total header size: 12 bytes
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct PacketHeaderV2 {
+    /// Device identifier
+    pub device_id: DeviceId,
+    /// Packet type
+    pub packet_type: PacketType,
+    /// Sequence number (wraps at 65535)
+    pub sequence: u16,
+    /// Payload length in bytes
+    pub payload_len: u16,
+}
+
+impl PacketHeaderV2 {
+    /// Sync byte 0 for V2 protocol
+    pub const SYNC_0: u8 = 0xA5;
+    /// Sync byte 1 for V2 protocol (different from V1 to distinguish versions)
+    pub const SYNC_1: u8 = 0xA6;
+    /// Header size in bytes
+    pub const SIZE: usize = 12;
+    /// Maximum payload size
+    pub const MAX_PAYLOAD: u16 = 1024;
+
+    /// Create a new V2 header.
+    #[must_use]
+    pub const fn new(device_id: DeviceId, packet_type: PacketType, sequence: u16, payload_len: u16) -> Self {
+        Self { device_id, packet_type, sequence, payload_len }
+    }
+
+    /// Compute the header checksum.
+    #[must_use]
+    pub fn checksum(&self) -> u8 {
+        let dev = self.device_id.as_bytes();
+        let seq_lo = self.sequence as u8;
+        let seq_hi = (self.sequence >> 8) as u8;
+        let len_lo = self.payload_len as u8;
+        let len_hi = (self.payload_len >> 8) as u8;
+
+        dev[0] ^ dev[1] ^ dev[2] ^ dev[3]
+            ^ (self.packet_type as u8)
+            ^ seq_lo ^ seq_hi
+            ^ len_lo ^ len_hi
+    }
+
+    /// Serialize header to bytes.
+    #[must_use]
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let dev = self.device_id.as_bytes();
+        [
+            Self::SYNC_0,
+            Self::SYNC_1,
+            dev[0],
+            dev[1],
+            dev[2],
+            dev[3],
+            self.packet_type as u8,
+            self.sequence as u8,
+            (self.sequence >> 8) as u8,
+            self.payload_len as u8,
+            (self.payload_len >> 8) as u8,
+            self.checksum(),
+        ]
+    }
+
+    /// Parse header from bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if sync bytes are wrong, packet type is invalid,
+    /// or checksum doesn't match.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProtocolError> {
+        if bytes.len() < Self::SIZE {
+            return Err(ProtocolError::IncompletePacket {
+                received: bytes.len(),
+                expected: Self::SIZE,
+            });
+        }
+
+        // Check sync bytes
+        if bytes[0] != Self::SYNC_0 || bytes[1] != Self::SYNC_1 {
+            return Err(ProtocolError::InvalidSync {
+                got_0: bytes[0],
+                got_1: bytes[1],
+            });
+        }
+
+        // Parse device ID
+        let device_id = DeviceId::from_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]);
+
+        // Parse packet type
+        let packet_type = PacketType::from_byte(bytes[6])
+            .ok_or(ProtocolError::InvalidPacketType { packet_type: bytes[6] })?;
+
+        // Parse sequence and length (little-endian)
+        let sequence = u16::from_le_bytes([bytes[7], bytes[8]]);
+        let payload_len = u16::from_le_bytes([bytes[9], bytes[10]]);
+
+        // Validate payload length
+        if payload_len > Self::MAX_PAYLOAD {
+            return Err(ProtocolError::PayloadTooLarge {
+                length: payload_len,
+                maximum: Self::MAX_PAYLOAD,
+            });
+        }
+
+        // Verify checksum
+        let header = Self { device_id, packet_type, sequence, payload_len };
+        let expected_checksum = header.checksum();
+        if bytes[11] != expected_checksum {
+            return Err(ProtocolError::ChecksumMismatch {
+                expected: expected_checksum,
+                computed: bytes[11],
+            });
+        }
+
+        Ok(header)
+    }
+
+    /// Convert to legacy header (drops device_id).
+    #[must_use]
+    pub const fn to_v1(&self) -> PacketHeader {
+        PacketHeader {
+            packet_type: self.packet_type,
+            sequence: self.sequence,
+            payload_len: self.payload_len,
+        }
+    }
+
+    /// Create from legacy header with device_id.
+    #[must_use]
+    pub const fn from_v1(header: PacketHeader, device_id: DeviceId) -> Self {
+        Self {
+            device_id,
+            packet_type: header.packet_type,
+            sequence: header.sequence,
+            payload_len: header.payload_len,
+        }
+    }
+}
+
+/// Detected protocol version from sync bytes.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProtocolVersion {
+    /// Legacy protocol (8-byte header, no device_id)
+    V1,
+    /// Extended protocol (12-byte header, with device_id)
+    V2,
+}
+
+impl ProtocolVersion {
+    /// Detect protocol version from sync bytes.
+    #[must_use]
+    pub const fn from_sync(sync_0: u8, sync_1: u8) -> Option<Self> {
+        match (sync_0, sync_1) {
+            (0xA5, 0x5A) => Some(Self::V1),
+            (0xA5, 0xA6) => Some(Self::V2),
+            _ => None,
+        }
+    }
+
+    /// Get header size for this protocol version.
+    #[must_use]
+    pub const fn header_size(self) -> usize {
+        match self {
+            Self::V1 => PacketHeader::SIZE,
+            Self::V2 => PacketHeaderV2::SIZE,
+        }
     }
 }
 

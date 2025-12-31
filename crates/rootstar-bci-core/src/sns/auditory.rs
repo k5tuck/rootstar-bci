@@ -197,7 +197,8 @@ impl BasilarMembrane {
     #[must_use]
     pub fn bark(frequency_hz: f32) -> f32 {
         let f_khz = frequency_hz / 1000.0;
-        13.0 * libm::atanf(0.76 * f_khz) + 3.5 * libm::atanf((f_khz / 7.5).powi(2))
+        let ratio = f_khz / 7.5;
+        13.0 * libm::atanf(0.76 * f_khz) + 3.5 * libm::atanf(ratio * ratio)
     }
 
     /// Compute basilar membrane displacement at a position for a given frequency
@@ -598,7 +599,7 @@ impl AuditoryPopulationBuilder {
 
         // Approximate number of ERBs in range
         let n_erbs = (erb_max - erb_min) / self.erb_spacing;
-        (n_erbs.ceil() as usize).max(1)
+        (libm::ceilf(n_erbs) as usize).max(1)
     }
 
     /// Get center frequencies for the population

@@ -3,10 +3,23 @@
 //! WASM-based visualization and control panel for the Rootstar BCI Platform.
 //! Provides real-time EEG plots, topographic maps, fNIRS heatmaps, and
 //! 3D sensory receptor visualization.
+//!
+//! # Multi-Device Support
+//!
+//! The [`dashboard`] module provides a multi-device dashboard for managing
+//! and visualizing multiple BCI devices simultaneously. It supports:
+//! - Device bar with connection status
+//! - Single, side-by-side, overlay, and grid view modes
+//! - Per-device visualization with color coding
+//! - Stimulation status display
 
 pub mod control;
+pub mod dashboard;
 pub mod sns_viz;
 pub mod viz;
+
+// Re-export dashboard types
+pub use dashboard::{DashboardDevice, DeviceStatus, MultiDeviceDashboard, ViewMode};
 
 use wasm_bindgen::prelude::*;
 
