@@ -14,6 +14,7 @@ use crate::bridge::{ConnectionState, DeviceEvent, DeviceInfo, DeviceManager, Dev
 use crate::fingerprint::StimulationController;
 use crate::processing::fnirs::FnirsProcessor;
 use crate::viz::electrode_status::{ElectrodeStatusPanel, ElectrodeState};
+use crate::viz::fnirs_status::FnirsStatusPanel;
 use rootstar_bci_core::protocol::DeviceId;
 use rootstar_bci_core::types::EegSample;
 
@@ -131,6 +132,8 @@ pub struct DashboardDevice {
     pub stim_controller: StimulationController,
     /// Electrode status panel
     pub electrode_status: ElectrodeStatusPanel,
+    /// fNIRS optode status panel
+    pub fnirs_status: FnirsStatusPanel,
     /// Per-channel impedance values (kOhms)
     pub impedances: [f32; 8],
     /// Last update time
@@ -149,6 +152,8 @@ impl DashboardDevice {
         let color = DEVICE_COLORS[color_index % DEVICE_COLORS.len()];
         let mut electrode_status = ElectrodeStatusPanel::new();
         electrode_status.title = info.name.clone();
+        let mut fnirs_status = FnirsStatusPanel::new();
+        fnirs_status.title = format!("{} - fNIRS", info.name);
 
         Self {
             id,
@@ -158,6 +163,7 @@ impl DashboardDevice {
             fnirs_processor: FnirsProcessor::new(30, 25), // 30mm separation, age 25
             stim_controller: StimulationController::new(),
             electrode_status,
+            fnirs_status,
             impedances: [0.0; 8],
             last_update: Instant::now(),
             color,
@@ -189,6 +195,8 @@ pub struct MultiDeviceDashboard {
     show_connection_panel: bool,
     /// Show electrode status panel (right sidebar)
     show_electrode_panel: bool,
+    /// Show fNIRS status panel (right sidebar)
+    show_fnirs_panel: bool,
     /// Device manager (optional, for scanning)
     device_manager: Option<Arc<DeviceManager>>,
     /// Event receiver
@@ -214,6 +222,7 @@ impl MultiDeviceDashboard {
             selected_device: None,
             show_connection_panel: false,
             show_electrode_panel: true, // Show by default
+            show_fnirs_panel: false,    // Hidden by default (user can toggle)
             device_manager: None,
             event_rx: None,
             device_counter: 0,
@@ -223,6 +232,11 @@ impl MultiDeviceDashboard {
     /// Toggle electrode panel visibility
     pub fn toggle_electrode_panel(&mut self) {
         self.show_electrode_panel = !self.show_electrode_panel;
+    }
+
+    /// Toggle fNIRS panel visibility
+    pub fn toggle_fnirs_panel(&mut self) {
+        self.show_fnirs_panel = !self.show_fnirs_panel;
     }
 
     /// Set the device manager for connection handling
@@ -380,6 +394,12 @@ impl MultiDeviceDashboard {
                     self.show_electrode_panel = !self.show_electrode_panel;
                 }
 
+                // fNIRS status toggle
+                let fnirs_label = if self.show_fnirs_panel { "Hide fNIRS" } else { "Show fNIRS" };
+                if ui.button(fnirs_label).clicked() {
+                    self.show_fnirs_panel = !self.show_fnirs_panel;
+                }
+
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(format!("{} devices connected", self.devices.len()));
                 });
@@ -435,6 +455,39 @@ impl MultiDeviceDashboard {
         }
         if show_scan_panel {
             self.show_connection_panel = true;
+        }
+
+        // fNIRS status panel (right sidebar, shown first so it appears further right)
+        if self.show_fnirs_panel {
+            let selected_id = self.selected_device.clone();
+            egui::SidePanel::right("fnirs_panel")
+                .resizable(true)
+                .default_width(320.0)
+                .min_width(280.0)
+                .show(ctx, |ui| {
+                    if let Some(ref id) = selected_id {
+                        if let Some(device) = self.devices.get_mut(id) {
+                            device.fnirs_status.ui(ui);
+                        }
+                    } else if !self.devices.is_empty() {
+                        // Show first device's fNIRS status if nothing selected
+                        if let Some(first_id) = self.device_order.first() {
+                            if let Some(device) = self.devices.get_mut(first_id) {
+                                device.fnirs_status.ui(ui);
+                            }
+                        }
+                    } else {
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(50.0);
+                            ui.heading("fNIRS Status");
+                            ui.separator();
+                            ui.add_space(20.0);
+                            ui.label(RichText::new("No device selected").italics());
+                            ui.add_space(10.0);
+                            ui.label("Connect a device to view\nfNIRS optode status and signals.");
+                        });
+                    }
+                });
         }
 
         // Electrode status panel (right sidebar)

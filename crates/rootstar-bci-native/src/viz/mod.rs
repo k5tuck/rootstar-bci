@@ -44,6 +44,9 @@ mod dashboard;
 #[cfg(feature = "viz")]
 mod electrode_status;
 
+#[cfg(feature = "viz")]
+mod fnirs_status;
+
 // Re-export application types
 #[cfg(feature = "viz")]
 pub use app::{run_app, MeshType, SnsVizApp, VizConfig};
@@ -70,4 +73,11 @@ pub use dashboard::{
 pub use electrode_status::{
     ElectrodePosition, ElectrodeState, ElectrodeStatus, ElectrodeStatusBar, ElectrodeStatusPanel,
     ELECTRODE_POSITIONS, REFERENCE_POSITIONS,
+};
+
+// Re-export fNIRS status types
+#[cfg(feature = "viz")]
+pub use fnirs_status::{
+    ChannelState, FnirsChannel, FnirsStatusPanel, OptodePosition, OptodeState, OptodeStatus,
+    OptodeType, Wavelength, default_prefrontal_layout,
 };
