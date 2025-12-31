@@ -570,6 +570,7 @@ mod tests {
         EegSample {
             channels: [Fixed24_8::from_raw(value); 8],
             sequence: 0,
+            timestamp_us: 0,
         }
     }
 

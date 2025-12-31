@@ -631,7 +631,9 @@ impl StimulusField {
             let stim_weight = if dist <= stimulus.radius_mm {
                 1.0
             } else {
-                libm::expf(-(dist - stimulus.radius_mm).powi(2) / (2.0 * stimulus.radius_mm.powi(2)))
+                let d = dist - stimulus.radius_mm;
+                let r = stimulus.radius_mm;
+                libm::expf(-(d * d) / (2.0 * r * r))
             };
 
             // Receptive field weighting

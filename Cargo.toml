@@ -112,6 +112,9 @@ uuid = { version = "1.11", features = ["v4", "serde"] }
 # DSP / FFT
 rustfft = "6.2"
 
+# External streaming protocols
+rosc = "0.10"  # OSC (Open Sound Control)
+
 # ============================================================================
 # WEB/WASM DEPENDENCIES
 # ============================================================================

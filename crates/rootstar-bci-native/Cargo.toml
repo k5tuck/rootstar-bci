@@ -18,6 +18,8 @@ usb = ["dep:serialport"]
 ble = ["dep:btleplug"]
 database = ["dep:rusqlite", "dep:uuid"]
 viz = ["dep:winit", "dep:wgpu", "dep:pollster", "dep:egui", "dep:egui-wgpu", "dep:egui-winit", "dep:bytemuck", "dep:image"]
+osc = ["dep:rosc"]
+streaming = ["osc"]
 
 [dependencies]
 # Core types (with std feature)
@@ -49,6 +51,9 @@ uuid = { workspace = true, optional = true }
 
 # DSP / FFT
 rustfft = { workspace = true }
+
+# Streaming protocols (optional)
+rosc = { workspace = true, optional = true }
 
 # Collections
 heapless = { workspace = true }

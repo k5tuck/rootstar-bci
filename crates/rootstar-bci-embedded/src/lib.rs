@@ -58,10 +58,27 @@ pub use drivers::emg::{EmgDriver, EmgFeatures, EmgGain, EmgSampleRate, EmgValenc
 // Re-export EDA driver (skin conductance)
 pub use drivers::eda::{EdaArrayConfig, EdaDriver, EdaError, EdaProcessor, EdaSampleRate};
 
-// Re-export BLE service definitions
+// Re-export BLE types
 pub use ble::{
-    BleCommand, DeviceState, StatusPacket,
+    // UUIDs
     BCI_SERVICE_UUID, EEG_DATA_CHAR_UUID, FNIRS_DATA_CHAR_UUID,
     COMMAND_CHAR_UUID, STATUS_CHAR_UUID, EMG_DATA_CHAR_UUID, EDA_DATA_CHAR_UUID,
-    pack_eeg_samples, unpack_eeg_samples, pack_fnirs_samples,
+    IMPEDANCE_CHAR_UUID, CONFIG_CHAR_UUID, STIM_CHAR_UUID, SYNC_CHAR_UUID,
+    GAP_SERVICE_UUID, DIS_SERVICE_UUID, BATTERY_SERVICE_UUID,
+    // Packet sizes
+    EEG_PACKET_SIZE, FNIRS_PACKET_SIZE, EMG_PACKET_SIZE, EDA_PACKET_SIZE,
+    IMPEDANCE_PACKET_SIZE, STATUS_PACKET_SIZE, CONFIG_PACKET_SIZE,
+    DEFAULT_MTU, PREFERRED_MTU, NOTIFY_QUEUE_DEPTH,
+    // Command protocol
+    Command, CommandResponse,
+    // State machine
+    DeviceState, status_flags,
+    // Data packets
+    EegPacket, FnirsPacket, EmgPacket, EdaPacket, ImpedancePacket, StatusPacket,
+    // Configuration
+    DeviceConfig,
+    // Peripheral state
+    BlePeripheralState,
+    // Helper functions
+    pack_eeg_samples, unpack_eeg_samples, pack_fnirs_samples, unpack_fnirs_samples,
 };

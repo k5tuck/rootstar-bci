@@ -39,6 +39,7 @@ pub mod ble;
 
 pub mod device_manager;
 pub mod device_context;
+pub mod streaming;
 
 // Re-export key types
 pub use device_manager::{
@@ -64,6 +65,12 @@ pub use ble::{
     COMMAND_CHAR_UUID, STATUS_CHAR_UUID, EMG_DATA_CHAR_UUID, EDA_DATA_CHAR_UUID,
 };
 
-// LSL and Brainflow would require external dependencies
-// pub mod lsl;
-// pub mod brainflow;
+// Streaming protocols (LSL, OSC, BrainFlow)
+pub use streaming::{
+    LslOutlet, LslInlet, StreamInfo, StreamType, ChannelFormat,
+    LslError, LslResult,
+    BrainFlowFormat, BrainFlowPacket, BoardId,
+};
+
+#[cfg(feature = "osc")]
+pub use streaming::{OscSender, OscReceiver, OscMessage, OscError, OscResult};
