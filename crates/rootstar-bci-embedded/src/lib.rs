@@ -40,6 +40,7 @@
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::must_use_candidate)]
 
+pub mod ble;
 pub mod drivers;
 
 // Re-export driver types (basic single-chip)
@@ -56,3 +57,11 @@ pub use drivers::emg::{EmgDriver, EmgFeatures, EmgGain, EmgSampleRate, EmgValenc
 
 // Re-export EDA driver (skin conductance)
 pub use drivers::eda::{EdaArrayConfig, EdaDriver, EdaError, EdaProcessor, EdaSampleRate};
+
+// Re-export BLE service definitions
+pub use ble::{
+    BleCommand, DeviceState, StatusPacket,
+    BCI_SERVICE_UUID, EEG_DATA_CHAR_UUID, FNIRS_DATA_CHAR_UUID,
+    COMMAND_CHAR_UUID, STATUS_CHAR_UUID, EMG_DATA_CHAR_UUID, EDA_DATA_CHAR_UUID,
+    pack_eeg_samples, unpack_eeg_samples, pack_fnirs_samples,
+};

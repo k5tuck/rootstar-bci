@@ -39,6 +39,19 @@ pub use fingerprint::{
     FusionConfig, StimulationController, StimulationSession,
 };
 
+// Re-export database types when feature enabled
+#[cfg(feature = "database")]
+pub use fingerprint::{
+    DatabaseError, DatabaseStats, DbResult, FingerprintDatabase, FingerprintQuery,
+    SimilarityMatch, StoredFingerprint,
+};
+
+// Re-export bridge types
+pub use bridge::{
+    ConnectionState, ConnectionType, DeviceCapabilities, DeviceError, DeviceEvent,
+    DeviceInfo, DeviceManager, DeviceManagerConfig, DeviceResult, DeviceState,
+};
+
 // Re-export SNS types
 pub use sns::{
     BidirectionalCalibrator, CalibrationMetrics, CorticalDecoder, CorticalEncoder,

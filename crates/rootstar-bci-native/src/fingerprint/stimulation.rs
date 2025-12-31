@@ -397,6 +397,27 @@ impl StimulationSession {
             .collect()
     }
 
+    /// Get elapsed time since session start.
+    #[must_use]
+    pub fn elapsed_time(&self) -> Duration {
+        self.elapsed()
+    }
+
+    /// Get remaining time in the session.
+    #[must_use]
+    pub fn remaining_time(&self) -> Option<Duration> {
+        if self.phase == SessionPhase::Idle || self.phase == SessionPhase::Complete {
+            return None;
+        }
+        let total = Duration::from_secs_f32(self.protocol.total_duration_s());
+        let elapsed = self.elapsed();
+        if elapsed >= total {
+            Some(Duration::ZERO)
+        } else {
+            Some(total - elapsed)
+        }
+    }
+
     /// Check if target has been achieved.
     #[must_use]
     pub fn target_achieved(&self, threshold: f32) -> bool {
@@ -512,6 +533,17 @@ impl StimulationController {
             .as_ref()
             .map(|s| matches!(s.phase, SessionPhase::RampUp | SessionPhase::Active | SessionPhase::RampDown))
             .unwrap_or(false)
+    }
+
+    /// Get reference to the current session.
+    #[must_use]
+    pub fn current_session(&self) -> Option<&StimulationSession> {
+        self.active_session.as_ref()
+    }
+
+    /// Stop the session (alias for stop_session).
+    pub fn stop(&mut self) {
+        self.stop_session();
     }
 }
 
