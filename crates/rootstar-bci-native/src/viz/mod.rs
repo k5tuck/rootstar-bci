@@ -41,6 +41,9 @@ mod mesh;
 #[cfg(feature = "viz")]
 mod dashboard;
 
+#[cfg(feature = "viz")]
+mod electrode_status;
+
 // Re-export application types
 #[cfg(feature = "viz")]
 pub use app::{run_app, MeshType, SnsVizApp, VizConfig};
@@ -60,4 +63,11 @@ pub use mesh::{
 #[cfg(feature = "viz")]
 pub use dashboard::{
     DashboardDevice, DeviceDataBuffers, MultiDeviceDashboard, StimulationPanel, ViewMode,
+};
+
+// Re-export electrode status types
+#[cfg(feature = "viz")]
+pub use electrode_status::{
+    ElectrodePosition, ElectrodeState, ElectrodeStatus, ElectrodeStatusBar, ElectrodeStatusPanel,
+    ELECTRODE_POSITIONS, REFERENCE_POSITIONS,
 };

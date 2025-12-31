@@ -13,6 +13,7 @@ use tokio::sync::mpsc;
 use crate::bridge::{ConnectionState, DeviceEvent, DeviceInfo, DeviceManager, DeviceState};
 use crate::fingerprint::StimulationController;
 use crate::processing::fnirs::FnirsProcessor;
+use crate::viz::electrode_status::{ElectrodeStatusPanel, ElectrodeState};
 use rootstar_bci_core::protocol::DeviceId;
 use rootstar_bci_core::types::EegSample;
 
@@ -128,6 +129,10 @@ pub struct DashboardDevice {
     pub fnirs_processor: FnirsProcessor,
     /// Stimulation controller
     pub stim_controller: StimulationController,
+    /// Electrode status panel
+    pub electrode_status: ElectrodeStatusPanel,
+    /// Per-channel impedance values (kOhms)
+    pub impedances: [f32; 8],
     /// Last update time
     pub last_update: Instant,
     /// Device color for visualization
@@ -142,6 +147,8 @@ impl DashboardDevice {
     /// Create a new dashboard device
     pub fn new(id: DeviceId, info: DeviceInfo, color_index: usize) -> Self {
         let color = DEVICE_COLORS[color_index % DEVICE_COLORS.len()];
+        let mut electrode_status = ElectrodeStatusPanel::new();
+        electrode_status.title = info.name.clone();
 
         Self {
             id,
@@ -150,11 +157,21 @@ impl DashboardDevice {
             buffers: DeviceDataBuffers::new(8, 4, 500),
             fnirs_processor: FnirsProcessor::new(30, 25), // 30mm separation, age 25
             stim_controller: StimulationController::new(),
+            electrode_status,
+            impedances: [0.0; 8],
             last_update: Instant::now(),
             color,
             selected: false,
             is_streaming: false,
         }
+    }
+
+    /// Update electrode impedance values
+    pub fn update_impedances(&mut self, impedances: &[f32]) {
+        for (i, &imp) in impedances.iter().take(8).enumerate() {
+            self.impedances[i] = imp;
+        }
+        self.electrode_status.update_from_impedance(&self.impedances);
     }
 }
 
@@ -170,6 +187,8 @@ pub struct MultiDeviceDashboard {
     selected_device: Option<DeviceId>,
     /// Show device connection panel
     show_connection_panel: bool,
+    /// Show electrode status panel (right sidebar)
+    show_electrode_panel: bool,
     /// Device manager (optional, for scanning)
     device_manager: Option<Arc<DeviceManager>>,
     /// Event receiver
@@ -194,10 +213,16 @@ impl MultiDeviceDashboard {
             view_mode: ViewMode::Single,
             selected_device: None,
             show_connection_panel: false,
+            show_electrode_panel: true, // Show by default
             device_manager: None,
             event_rx: None,
             device_counter: 0,
         }
+    }
+
+    /// Toggle electrode panel visibility
+    pub fn toggle_electrode_panel(&mut self) {
+        self.show_electrode_panel = !self.show_electrode_panel;
     }
 
     /// Set the device manager for connection handling
@@ -349,6 +374,12 @@ impl MultiDeviceDashboard {
                     self.show_connection_panel = true;
                 }
 
+                // Electrode status toggle
+                let electrode_label = if self.show_electrode_panel { "Hide Electrodes" } else { "Show Electrodes" };
+                if ui.button(electrode_label).clicked() {
+                    self.show_electrode_panel = !self.show_electrode_panel;
+                }
+
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(format!("{} devices connected", self.devices.len()));
                 });
@@ -404,6 +435,39 @@ impl MultiDeviceDashboard {
         }
         if show_scan_panel {
             self.show_connection_panel = true;
+        }
+
+        // Electrode status panel (right sidebar)
+        if self.show_electrode_panel {
+            let selected_id = self.selected_device.clone();
+            egui::SidePanel::right("electrode_panel")
+                .resizable(true)
+                .default_width(320.0)
+                .min_width(280.0)
+                .show(ctx, |ui| {
+                    if let Some(ref id) = selected_id {
+                        if let Some(device) = self.devices.get_mut(id) {
+                            device.electrode_status.ui(ui);
+                        }
+                    } else if !self.devices.is_empty() {
+                        // Show first device's electrode status if nothing selected
+                        if let Some(first_id) = self.device_order.first() {
+                            if let Some(device) = self.devices.get_mut(first_id) {
+                                device.electrode_status.ui(ui);
+                            }
+                        }
+                    } else {
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(50.0);
+                            ui.heading("Electrode Status");
+                            ui.separator();
+                            ui.add_space(20.0);
+                            ui.label(RichText::new("No device selected").italics());
+                            ui.add_space(10.0);
+                            ui.label("Connect a device to view\nelectrode status and impedance.");
+                        });
+                    }
+                });
         }
 
         // Main content area
