@@ -95,6 +95,8 @@ pub enum SensoryEvent {
     Taste(TasteEvent),
     /// Visual effect (phosphenes, etc.).
     Visual(VisualEvent),
+    /// Olfactory/smell effect.
+    Olfactory(OlfactoryEvent),
     /// Direct haptic/touch effect.
     Haptic(HapticEvent),
     /// Combined multi-sensory event.
@@ -292,6 +294,58 @@ pub struct HapticEvent {
     pub duration: Option<Duration>,
 }
 
+/// Olfactory/smell event.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OlfactoryEvent {
+    /// Odorant class/type.
+    pub odorant_class: OdorantType,
+    /// Concentration/intensity (0.0 - 1.0).
+    pub concentration: f32,
+    /// Whether the smell is pleasant (affects processing).
+    pub pleasant: bool,
+    /// Duration.
+    pub duration: Option<Duration>,
+    /// 3D position if spatial (for source localization).
+    pub position: Option<[f32; 3]>,
+}
+
+impl Default for OlfactoryEvent {
+    fn default() -> Self {
+        Self {
+            odorant_class: OdorantType::Floral,
+            concentration: 0.5,
+            pleasant: true,
+            duration: None,
+            position: None,
+        }
+    }
+}
+
+/// Odorant classification for game engines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OdorantType {
+    /// Floral scents (rose, jasmine, lavender).
+    Floral,
+    /// Fruity scents (citrus, berry, apple).
+    Fruity,
+    /// Woody scents (cedar, pine, sandalwood).
+    Woody,
+    /// Minty/herbal scents (mint, eucalyptus).
+    Minty,
+    /// Sweet scents (vanilla, caramel, honey).
+    Sweet,
+    /// Pungent/sharp scents (ammonia, vinegar).
+    Pungent,
+    /// Decay/unpleasant scents (smoke, sulfur).
+    Decay,
+    /// Musky/earthy scents (soil, moss).
+    Musky,
+    /// Food/cooking scents (bread, coffee).
+    Food,
+    /// Clean/soapy scents (detergent, fresh linen).
+    Clean,
+}
+
 // ============================================================================
 // Game Engine Adapter Trait
 // ============================================================================
@@ -320,6 +374,9 @@ pub trait GameEngineAdapter {
 
     /// Query active visual effects.
     fn query_visual_effects(&self) -> Vec<VisualEvent>;
+
+    /// Query active olfactory sources.
+    fn query_olfactory_sources(&self) -> Vec<OlfactoryEvent>;
 
     /// Query active haptic contacts.
     fn query_haptic_contacts(&self) -> Vec<HapticEvent>;
@@ -383,6 +440,8 @@ pub struct SensoryBridge {
     pub taste_enabled: bool,
     /// Visual processing enabled.
     pub visual_enabled: bool,
+    /// Olfactory processing enabled.
+    pub olfactory_enabled: bool,
     /// Haptic processing enabled.
     pub haptic_enabled: bool,
     /// Global intensity scale.
@@ -400,6 +459,7 @@ impl SensoryBridge {
             sound_enabled: true,
             taste_enabled: true,
             visual_enabled: true,
+            olfactory_enabled: true,
             haptic_enabled: true,
             intensity_scale: 1.0,
             event_queue: Vec::new(),
@@ -408,12 +468,13 @@ impl SensoryBridge {
 
     /// Create with only specific modalities enabled.
     #[must_use]
-    pub fn with_modalities(wind: bool, sound: bool, taste: bool, visual: bool, haptic: bool) -> Self {
+    pub fn with_modalities(wind: bool, sound: bool, taste: bool, visual: bool, olfactory: bool, haptic: bool) -> Self {
         Self {
             wind_enabled: wind,
             sound_enabled: sound,
             taste_enabled: taste,
             visual_enabled: visual,
+            olfactory_enabled: olfactory,
             haptic_enabled: haptic,
             intensity_scale: 1.0,
             event_queue: Vec::new(),
@@ -438,6 +499,9 @@ impl SensoryBridge {
             SensoryEvent::Wind(wind) if self.wind_enabled => {
                 stimuli.extend(self.process_wind(&wind));
             }
+            SensoryEvent::Temperature(temp) if self.wind_enabled => {
+                stimuli.extend(self.process_temperature(&temp));
+            }
             SensoryEvent::Sound(sound) if self.sound_enabled => {
                 stimuli.extend(self.process_sound(&sound));
             }
@@ -446,6 +510,9 @@ impl SensoryBridge {
             }
             SensoryEvent::Visual(visual) if self.visual_enabled => {
                 stimuli.extend(self.process_visual(&visual));
+            }
+            SensoryEvent::Olfactory(olfactory) if self.olfactory_enabled => {
+                stimuli.extend(self.process_olfactory(&olfactory));
             }
             SensoryEvent::Haptic(haptic) if self.haptic_enabled => {
                 stimuli.extend(self.process_haptic(&haptic));
@@ -502,6 +569,13 @@ impl SensoryBridge {
         if self.visual_enabled {
             for visual in adapter.query_visual_effects() {
                 stimuli.extend(self.process_visual(&visual));
+            }
+        }
+
+        // Olfactory
+        if self.olfactory_enabled {
+            for olfactory in adapter.query_olfactory_sources() {
+                stimuli.extend(self.process_olfactory(&olfactory));
             }
         }
 
@@ -602,6 +676,37 @@ impl SensoryBridge {
             },
         }]
     }
+
+    fn process_temperature(&self, temp: &TemperatureEvent) -> Vec<ProcessedStimulus> {
+        // Convert temperature deviation from neutral (32°C skin temp) to intensity
+        let deviation = (temp.temperature_c - 32.0).abs();
+        let intensity = Intensity::new((deviation / 20.0).min(1.0) * self.intensity_scale);
+
+        temp.body_regions
+            .iter()
+            .map(|&region| ProcessedStimulus {
+                modality: SensoryModality::Tactile, // Thermoreceptive maps to tactile pathway
+                region: Some(region),
+                intensity,
+                parameters: StimParameters::Temperature {
+                    temperature_c: temp.temperature_c,
+                    rate: temp.rate,
+                },
+            })
+            .collect()
+    }
+
+    fn process_olfactory(&self, olfactory: &OlfactoryEvent) -> Vec<ProcessedStimulus> {
+        vec![ProcessedStimulus {
+            modality: SensoryModality::Olfactory,
+            region: None,
+            intensity: Intensity::new(olfactory.concentration * self.intensity_scale),
+            parameters: StimParameters::Olfactory {
+                odorant_type: olfactory.odorant_class,
+                pleasant: olfactory.pleasant,
+            },
+        }]
+    }
 }
 
 impl Default for SensoryBridge {
@@ -647,12 +752,16 @@ pub enum SensoryModality {
 pub enum StimParameters {
     /// Wind/tactile parameters.
     Wind { temperature_c: f32, turbulence: f32 },
+    /// Temperature parameters.
+    Temperature { temperature_c: f32, rate: f32 },
     /// Sound parameters.
     Sound { frequency_hz: f32, pan: f32 },
     /// Taste parameters.
     Taste { concentrations: [f32; 5] },
     /// Visual parameters.
     Visual { position: [f32; 2], color: [f32; 3] },
+    /// Olfactory parameters.
+    Olfactory { odorant_type: OdorantType, pleasant: bool },
     /// Haptic parameters.
     Haptic { vibration_hz: Option<f32>, texture: f32 },
 }
@@ -700,7 +809,7 @@ mod tests {
 
     #[test]
     fn test_disabled_modality() {
-        let mut bridge = SensoryBridge::with_modalities(true, false, false, false, false);
+        let mut bridge = SensoryBridge::with_modalities(true, false, false, false, false, false);
 
         let sound_event = SensoryEvent::Sound(SoundEvent::default());
         let stimuli = bridge.process_event(sound_event);

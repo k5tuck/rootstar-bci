@@ -59,8 +59,9 @@ pub mod limiter;
 pub mod translator;
 
 pub use engine::{
-    GameEngineAdapter, HapticEvent, ProcessedStimulus, SensoryBridge, SensoryEvent,
-    SensoryModality, SoundEvent, TasteEvent, VisualEvent, WindEvent,
+    GameEngineAdapter, HapticEvent, OdorantType, OlfactoryEvent, ProcessedStimulus, SensoryBridge,
+    SensoryEvent, SensoryModality, SoundEvent, TasteEvent, TemperatureEvent, VisualEvent,
+    WindEvent,
 };
 pub use intensity::IntensityCalculator;
 pub use limiter::{LimiterConfig, LimiterPreset, SensationLimiter};
