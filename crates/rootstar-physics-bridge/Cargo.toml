@@ -1,0 +1,40 @@
+[package]
+name = "rootstar-physics-bridge"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bridge between VR physics engine and BCI stimulation system"
+keywords = ["bci", "vr", "bridge", "neural-stimulation"]
+categories = ["simulation", "science"]
+
+[dependencies]
+rootstar-physics-core = { path = "../rootstar-physics-core" }
+rootstar-physics-mesh = { path = "../rootstar-physics-mesh" }
+rootstar-bci-core = { workspace = true }
+rootstar-bci-native = { workspace = true }
+
+# Database
+rusqlite = { workspace = true }
+
+# Math
+nalgebra = { workspace = true }
+libm = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+
+[lints]
+workspace = true

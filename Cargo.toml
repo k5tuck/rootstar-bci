@@ -13,6 +13,22 @@ members = [
 
     # Tier 3: Web (WASM visualization)
     "crates/rootstar-bci-web",
+
+    # ========================================================================
+    # VR Physics Engine (candidate for separate repo)
+    # ========================================================================
+    # These crates implement the VR Neural Mapping physics system.
+    # They are designed to be moved to a separate repository (rootstar-physics)
+    # once the architecture is validated.
+
+    # Physics core: wind, temperature, collision types (no_std compatible)
+    "crates/rootstar-physics-core",
+
+    # Body mesh coordinate system and region mapping
+    "crates/rootstar-physics-mesh",
+
+    # Bridge between physics engine and BCI stimulation
+    "crates/rootstar-physics-bridge",
 ]
 
 [workspace.package]
@@ -155,6 +171,11 @@ rootstar-bci-core = { path = "crates/rootstar-bci-core", default-features = fals
 rootstar-bci-embedded = { path = "crates/rootstar-bci-embedded", default-features = false }
 rootstar-bci-native = { path = "crates/rootstar-bci-native" }
 rootstar-bci-web = { path = "crates/rootstar-bci-web" }
+
+# VR Physics Engine crates (candidate for separate repo)
+rootstar-physics-core = { path = "crates/rootstar-physics-core", default-features = false }
+rootstar-physics-mesh = { path = "crates/rootstar-physics-mesh" }
+rootstar-physics-bridge = { path = "crates/rootstar-physics-bridge" }
 
 [workspace.lints.rust]
 # Safety
