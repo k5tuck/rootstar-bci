@@ -1,0 +1,31 @@
+[package]
+name = "rootstar-physics-mesh"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Body mesh coordinate system for VR neural mapping"
+keywords = ["mesh", "vr", "body-mapping", "bci"]
+categories = ["simulation", "game-development"]
+
+[dependencies]
+rootstar-physics-core = { path = "../rootstar-physics-core" }
+
+# Math
+nalgebra = { workspace = true }
+libm = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# Collections
+heapless = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+
+[lints]
+workspace = true

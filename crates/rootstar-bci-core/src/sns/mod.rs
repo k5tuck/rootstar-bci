@@ -8,6 +8,8 @@
 //! - **Tactile**: Mechanoreceptors (Meissner, Merkel, Pacinian, Ruffini)
 //! - **Auditory**: Hair cells (inner and outer) with tonotopic organization
 //! - **Gustatory**: Taste receptor cells (sweet, salty, sour, bitter, umami)
+//! - **Visual**: Photoreceptors (rods, cones) and retinal ganglion cells
+//! - **Olfactory**: Olfactory receptor neurons and olfactory bulb circuits
 //!
 //! # Architecture
 //!
@@ -35,9 +37,11 @@ pub mod auditory;
 pub mod encoding;
 pub mod error;
 pub mod gustatory;
+pub mod olfactory;
 pub mod spiking;
 pub mod tactile;
 pub mod types;
+pub mod visual;
 
 // Re-export commonly used types
 pub use encoding::{
@@ -45,9 +49,9 @@ pub use encoding::{
 };
 pub use error::SnsError;
 pub use types::{
-    BodyRegion, Position2D, Position3D, ReceptiveField, ReceptorPopulation, ReceptorType,
-    SensoryModality, SpatialExtent, SpatialReceptor, StimulusDescriptor, StimulusField,
-    StimulusType,
+    BodyRegion, OdorantClass, Position2D, Position3D, ReceptiveField, ReceptorPopulation,
+    ReceptorType, SensoryModality, SpatialExtent, SpatialReceptor, StimulusDescriptor,
+    StimulusField, StimulusType,
 };
 
 // Re-export receptor models
@@ -56,7 +60,15 @@ pub use auditory::{
     OuterHairCell,
 };
 pub use gustatory::{GustatoryReceptor, TasteBud, TasteQuality, TasteReceptorCell};
+pub use olfactory::{
+    GranuleCell, MitralCell, Odorant, OdorantAffinities, OlfactoryBulb, OlfactoryReceptor,
+    OlfactoryReceptorId, OlfactoryReceptorNeuron, TuftedCell,
+};
 pub use spiking::{LifNeuron, SpikingNetwork, Synapse, SynapseType};
 pub use tactile::{
     MeissnerReceptor, MerkelReceptor, PacinianReceptor, RuffiniReceptor, TactileReceptor,
+};
+pub use visual::{
+    ConePhotoreceptor, ConeType, GanglionCellType, Phosphene, PhospheneModel, RetinotopicMap,
+    RetinalGanglionCell, RodPhotoreceptor, VisualCortexRegion, VisualReceptor,
 };

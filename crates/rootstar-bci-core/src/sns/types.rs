@@ -24,6 +24,10 @@ pub enum SensoryModality {
     Auditory,
     /// Gustatory (taste)
     Gustatory,
+    /// Visual (sight)
+    Visual,
+    /// Olfactory (smell)
+    Olfactory,
     /// Proprioceptive (body position)
     Proprioceptive,
     /// Nociceptive (pain)
@@ -41,6 +45,8 @@ impl SensoryModality {
             Self::Tactile => "S1 (Primary Somatosensory)",
             Self::Auditory => "A1 (Primary Auditory)",
             Self::Gustatory => "Insula/Frontal Operculum",
+            Self::Visual => "V1 (Primary Visual Cortex)",
+            Self::Olfactory => "Piriform Cortex/Olfactory Bulb",
             Self::Proprioceptive => "S1 (Area 3a)",
             Self::Nociceptive => "S1/Insula/ACC",
             Self::Thermoreceptive => "Insula",
@@ -55,6 +61,8 @@ impl SensoryModality {
             Self::Tactile => 20,       // SEP N20 latency
             Self::Auditory => 10,      // ABR wave V
             Self::Gustatory => 150,    // GEP P1 latency
+            Self::Visual => 50,        // VEP P100 / 2 (approx)
+            Self::Olfactory => 100,    // Olfactory ERP latency
             Self::Proprioceptive => 25,
             Self::Nociceptive => 200,  // C-fiber delay
             Self::Thermoreceptive => 150,
@@ -98,6 +106,32 @@ pub enum ReceptorType {
     FoliatePapilla,
     /// Circumvallate papilla: V-shaped row at posterior tongue
     CircumvallatePapilla,
+
+    // === Visual Photoreceptors ===
+    /// Rod photoreceptor: scotopic (dim light) vision, high sensitivity
+    RodPhotoreceptor,
+    /// S-cone (short wavelength): blue-sensitive, ~420nm peak
+    SCone,
+    /// M-cone (medium wavelength): green-sensitive, ~530nm peak
+    MCone,
+    /// L-cone (long wavelength): red-sensitive, ~560nm peak
+    LCone,
+    /// Retinal ganglion cell (ON-center): responds to light onset
+    GanglionOnCenter,
+    /// Retinal ganglion cell (OFF-center): responds to light offset
+    GanglionOffCenter,
+    /// Intrinsically photosensitive RGC: circadian/pupil reflex
+    IpRGC,
+
+    // === Olfactory Receptors ===
+    /// Olfactory receptor neuron: ~400 types, one receptor type per neuron
+    OlfactoryReceptorNeuron,
+    /// Mitral cell: principal output neuron of olfactory bulb
+    MitralCell,
+    /// Tufted cell: secondary output neuron, faster responses
+    TuftedCell,
+    /// Granule cell: inhibitory interneuron in olfactory bulb
+    OlfactoryGranuleCell,
 }
 
 impl ReceptorType {
@@ -112,6 +146,14 @@ impl ReceptorType {
             Self::TypeIITasteCell | Self::TypeIIITasteCell | Self::ENaCTasteCell |
             Self::FungiformPapilla | Self::FoliatePapilla | Self::CircumvallatePapilla => {
                 SensoryModality::Gustatory
+            }
+            Self::RodPhotoreceptor | Self::SCone | Self::MCone | Self::LCone |
+            Self::GanglionOnCenter | Self::GanglionOffCenter | Self::IpRGC => {
+                SensoryModality::Visual
+            }
+            Self::OlfactoryReceptorNeuron | Self::MitralCell | Self::TuftedCell |
+            Self::OlfactoryGranuleCell => {
+                SensoryModality::Olfactory
             }
         }
     }
@@ -130,10 +172,20 @@ impl ReceptorType {
             Self::OuterHairCell => AdaptationRate::VeryRapid,
             Self::TypeIITasteCell | Self::TypeIIITasteCell | Self::ENaCTasteCell => AdaptationRate::Slow,
             Self::FungiformPapilla | Self::FoliatePapilla | Self::CircumvallatePapilla => AdaptationRate::Slow,
+            // Visual: rods are slow, cones are rapid, ganglion cells vary
+            Self::RodPhotoreceptor => AdaptationRate::Slow,
+            Self::SCone | Self::MCone | Self::LCone => AdaptationRate::Rapid,
+            Self::GanglionOnCenter | Self::GanglionOffCenter => AdaptationRate::Rapid,
+            Self::IpRGC => AdaptationRate::Slow, // Slow for circadian
+            // Olfactory: ORNs adapt, mitral/tufted are rapid, granule slow
+            Self::OlfactoryReceptorNeuron => AdaptationRate::Slow,
+            Self::MitralCell | Self::TuftedCell => AdaptationRate::Rapid,
+            Self::OlfactoryGranuleCell => AdaptationRate::Slow,
         }
     }
 
     /// Get the typical receptive field size in millimeters
+    /// For visual: degrees of visual angle; for olfactory: conceptual spread
     #[inline]
     #[must_use]
     pub fn receptive_field_mm(self) -> f32 {
@@ -149,6 +201,16 @@ impl ReceptorType {
             Self::FungiformPapilla => 1.0,
             Self::FoliatePapilla => 2.0,
             Self::CircumvallatePapilla => 3.0,
+            // Visual: foveal cones are tiny, peripheral rods larger, ganglion cells larger still
+            Self::SCone | Self::MCone | Self::LCone => 0.005, // ~5 microns foveal
+            Self::RodPhotoreceptor => 0.002,  // ~2 microns
+            Self::GanglionOnCenter | Self::GanglionOffCenter => 0.1, // ~0.1° center
+            Self::IpRGC => 1.0,  // Large receptive fields
+            // Olfactory: not spatial in traditional sense
+            Self::OlfactoryReceptorNeuron => 0.01, // Single glomerulus
+            Self::MitralCell => 0.05,
+            Self::TuftedCell => 0.03,
+            Self::OlfactoryGranuleCell => 0.1,
         }
     }
 }
@@ -501,6 +563,45 @@ pub enum StimulusType {
         /// Rate of change in °C/s
         rate_c_per_s: f32,
     },
+    /// Visual stimulus (light)
+    Visual {
+        /// Luminance in candelas per square meter
+        luminance_cd_m2: f32,
+        /// Wavelength in nanometers (for spectral, 0 for broadband)
+        wavelength_nm: f32,
+        /// Contrast (Michelson contrast, 0-1)
+        contrast: f32,
+        /// Spatial frequency in cycles per degree (for gratings)
+        spatial_freq_cpd: f32,
+    },
+    /// Olfactory stimulus (odor)
+    Olfactory {
+        /// Concentration (arbitrary units, 0-1 normalized)
+        concentration: f32,
+        /// Odorant class/identity
+        odorant: OdorantClass,
+    },
+}
+
+/// Simplified odorant classification for stimulus
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum OdorantClass {
+    /// Floral scents (rose, jasmine)
+    Floral,
+    /// Fruity scents (citrus, berry)
+    Fruity,
+    /// Woody scents (cedar, pine)
+    Woody,
+    /// Minty scents (menthol, peppermint)
+    Minty,
+    /// Sweet scents (vanilla, caramel)
+    Sweet,
+    /// Pungent scents (ammonia, vinegar)
+    Pungent,
+    /// Decayed/putrid scents
+    Putrid,
+    /// Musky scents
+    Musky,
 }
 
 /// Simplified taste quality for stimulus
@@ -655,6 +756,15 @@ impl StimulusField {
                     // Normalize around 32°C (skin temperature)
                     (*temperature_c - 32.0) / 10.0
                 }
+                StimulusType::Visual { luminance_cd_m2, contrast, .. } => {
+                    // Log-scale luminance (Weber-Fechner) with contrast modulation
+                    let log_lum = libm::log10f(luminance_cd_m2.max(0.001) / 100.0);
+                    (log_lum + 2.0) * contrast // Normalized around 100 cd/m²
+                }
+                StimulusType::Olfactory { concentration, .. } => {
+                    // Olfactory response follows Hill equation (sigmoidal)
+                    *concentration
+                }
             };
 
             total_stimulus += intensity * stim_weight * rf_weight;
@@ -723,6 +833,39 @@ impl SpatialExtent {
             width: 50.0,   // Width in mm
             height: 100.0, // Length in mm
             depth: 3.0,    // Papillae depth
+        }
+    }
+
+    /// Create extent for the retina (visual field in degrees)
+    #[inline]
+    #[must_use]
+    pub const fn retina() -> Self {
+        Self {
+            width: 180.0,  // Horizontal field of view in degrees
+            height: 120.0, // Vertical field of view in degrees
+            depth: 0.3,    // Retinal thickness in mm
+        }
+    }
+
+    /// Create extent for the fovea (high-acuity central vision)
+    #[inline]
+    #[must_use]
+    pub const fn fovea() -> Self {
+        Self {
+            width: 5.0,    // Central 5 degrees
+            height: 5.0,   // Central 5 degrees
+            depth: 0.2,    // Foveal pit depth
+        }
+    }
+
+    /// Create extent for the olfactory epithelium
+    #[inline]
+    #[must_use]
+    pub const fn olfactory_epithelium() -> Self {
+        Self {
+            width: 10.0,   // Width in mm
+            height: 50.0,  // Total area ~5 cm² per side
+            depth: 0.1,    // Epithelial depth
         }
     }
 }
