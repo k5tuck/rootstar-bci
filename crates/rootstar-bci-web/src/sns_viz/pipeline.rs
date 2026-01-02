@@ -339,6 +339,8 @@ impl BciVizPipeline {
                 MeshId::SkinPatch { .. } => SensoryModality::Tactile,
                 MeshId::Cochlea { .. } => SensoryModality::Auditory,
                 MeshId::Tongue => SensoryModality::Gustatory,
+                MeshId::Retina { .. } => SensoryModality::Visual,
+                MeshId::Olfactory { .. } => SensoryModality::Olfactory,
             };
 
             if mesh_modality == sample.modality
@@ -548,6 +550,8 @@ impl PlaybackController {
                         SensoryModality::Proprioceptive => 3,
                         SensoryModality::Nociceptive => 4,
                         SensoryModality::Thermoreceptive => 5,
+                        SensoryModality::Visual => 6,
+                        SensoryModality::Olfactory => 7,
                     };
                     encoded[13] = sample.channel;
                     encoded[14..18].copy_from_slice(&sample.activation.to_le_bytes());
@@ -689,6 +693,8 @@ impl SimulationGenerator {
                 SensoryModality::Proprioceptive => 3,
                 SensoryModality::Nociceptive => 4,
                 SensoryModality::Thermoreceptive => 5,
+                SensoryModality::Visual => 6,
+                SensoryModality::Olfactory => 7,
             };
             encoded[13] = channel;
             encoded[14..18].copy_from_slice(&activation.to_le_bytes());

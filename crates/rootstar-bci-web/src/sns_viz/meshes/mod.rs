@@ -4,12 +4,19 @@
 //! - Skin surface with mechanoreceptor positions
 //! - Cochlea with hair cell positions
 //! - Tongue with papillae and taste bud positions
+//! - Retina with photoreceptor and ganglion cell positions
+//! - Olfactory epithelium and bulb with receptor neuron positions
 
 pub mod cochlea;
+pub mod olfactory;
+pub mod retina;
 pub mod skin;
 pub mod tongue;
 
 use rootstar_bci_core::sns::types::{BodyRegion, Ear, Finger};
+
+pub use olfactory::{OdorantReceptorClass, OlfactoryView};
+pub use retina::{Eye, RetinaView};
 
 /// Vertex format for SNS meshes
 #[repr(C)]
@@ -79,6 +86,25 @@ pub enum ReceptorType {
     FungiformPapilla,
     FoliatePapilla,
     CircumvallatePapilla,
+
+    // Visual - Photoreceptors
+    Rod,
+    LCone,
+    MCone,
+    SCone,
+    // Visual - Ganglion cells
+    GanglionOn,
+    GanglionOff,
+    // Visual - V1 cortex electrode sites
+    V1Electrode,
+
+    // Olfactory - Epithelium
+    OlfactoryNeuron,
+    // Olfactory - Bulb
+    Glomerulus,
+    Mitral,
+    Tufted,
+    Granule,
 }
 
 /// Mesh ID for scene management
@@ -90,6 +116,10 @@ pub enum MeshId {
     Cochlea { ear: Ear },
     /// Tongue surface
     Tongue,
+    /// Retina (visual)
+    Retina { eye: Eye, view: RetinaView },
+    /// Olfactory structure
+    Olfactory { view: OlfactoryView },
 }
 
 impl MeshId {
@@ -102,6 +132,23 @@ impl MeshId {
                 Ear::Right => 2,
             },
             MeshId::Tongue => 3,
+            MeshId::Retina { eye, view } => {
+                let eye_offset = match eye {
+                    Eye::Left => 0,
+                    Eye::Right => 3,
+                };
+                let view_offset = match view {
+                    RetinaView::Flat => 0,
+                    RetinaView::Curved => 1,
+                    RetinaView::Cortex => 2,
+                };
+                10 + eye_offset + view_offset
+            }
+            MeshId::Olfactory { view } => match view {
+                OlfactoryView::Epithelium => 20,
+                OlfactoryView::Bulb => 21,
+                OlfactoryView::Combined => 22,
+            },
         }
     }
 
@@ -113,6 +160,16 @@ impl MeshId {
             },
             1 => MeshId::Cochlea { ear: Ear::Left },
             2 => MeshId::Cochlea { ear: Ear::Right },
+            3 => MeshId::Tongue,
+            10 => MeshId::Retina { eye: Eye::Left, view: RetinaView::Flat },
+            11 => MeshId::Retina { eye: Eye::Left, view: RetinaView::Curved },
+            12 => MeshId::Retina { eye: Eye::Left, view: RetinaView::Cortex },
+            13 => MeshId::Retina { eye: Eye::Right, view: RetinaView::Flat },
+            14 => MeshId::Retina { eye: Eye::Right, view: RetinaView::Curved },
+            15 => MeshId::Retina { eye: Eye::Right, view: RetinaView::Cortex },
+            20 => MeshId::Olfactory { view: OlfactoryView::Epithelium },
+            21 => MeshId::Olfactory { view: OlfactoryView::Bulb },
+            22 => MeshId::Olfactory { view: OlfactoryView::Combined },
             _ => MeshId::Tongue,
         }
     }
