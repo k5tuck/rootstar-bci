@@ -15,7 +15,9 @@ Rootstar BCI is an embedded-first platform that combines:
 
 ## Architecture
 
-The platform uses a tiered architecture:
+The platform uses a tiered architecture with VR/XR physics integration:
+
+![System Architecture](docs/diagrams/01-system-architecture.png)
 
 | Tier | Crate | Description |
 |------|-------|-------------|
@@ -32,6 +34,10 @@ The platform uses a tiered architecture:
 | `rootstar-physics-core` | Physics simulation core with multi-sensory haptics |
 | `rootstar-physics-mesh` | 3D mesh representations for neural mapping |
 | `rootstar-physics-bridge` | Integration bridge between BCI and physics systems |
+
+### Architecture Diagrams
+
+For detailed architecture documentation including data flow, hardware interfaces, and processing pipelines, see **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ## Installation
 
@@ -394,6 +400,8 @@ let coherence = session.compute_coherence(channel, (8.0, 13.0), 250.0)?;
 
 ## Sensory Neural Simulation (SNS)
 
+![SNS Architecture](docs/diagrams/04-sns-architecture.png)
+
 The SNS system provides bidirectional mapping between neural signals and simulated sensory experiences for VR/XR applications.
 
 ### Supported Modalities
@@ -673,6 +681,10 @@ rootstar-bci/
 ```
 
 ## Technical Specifications
+
+### Signal Processing Pipeline
+
+![Processing Pipeline](docs/diagrams/05-processing-pipeline.png)
 
 ### EEG (ADS1299)
 - Resolution: 24-bit

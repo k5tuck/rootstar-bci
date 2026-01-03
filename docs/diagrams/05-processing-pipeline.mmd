@@ -1,0 +1,125 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4a90d9', 'primaryTextColor': '#fff', 'primaryBorderColor': '#2d5a87', 'lineColor': '#5a5a5a'}}}%%
+flowchart LR
+    subgraph Input["<b>Raw Input</b>"]
+        EEGRaw["EEG Raw<br/>(8ch × 24bit)"]
+        FNIRSRaw["fNIRS Raw<br/>(760nm, 850nm)"]
+        EMGRaw["EMG Raw"]
+        EDARaw["EDA Raw"]
+    end
+
+    subgraph Preproc["<b>Preprocessing</b>"]
+        Notch["Notch Filter<br/>(50/60 Hz)"]
+        Bandpass["Bandpass<br/>(0.5-100 Hz)"]
+        BeerLambert["Beer-Lambert<br/>Transform"]
+        RMS["RMS<br/>Envelope"]
+        Decomp["Tonic/Phasic<br/>Decomposition"]
+    end
+
+    subgraph Spectral["<b>Spectral Analysis</b>"]
+        FFT["FFT<br/>(Hanning Window)"]
+        Welch["Welch's Method"]
+        Bands["Band Power<br/>Extraction"]
+    end
+
+    subgraph BandDef["<b>EEG Bands</b>"]
+        Delta["Delta<br/>(0.5-4 Hz)"]
+        Theta["Theta<br/>(4-8 Hz)"]
+        Alpha["Alpha<br/>(8-13 Hz)"]
+        Beta["Beta<br/>(13-30 Hz)"]
+        Gamma["Gamma<br/>(30-100 Hz)"]
+    end
+
+    subgraph Fusion["<b>Multi-Modal Fusion</b>"]
+        Align["Temporal<br/>Alignment"]
+        Resample["Resample to<br/>Common Rate"]
+        AlignedSample["Aligned<br/>Sample"]
+    end
+
+    subgraph Features["<b>Feature Space</b>"]
+        Power["Relative<br/>Band Power"]
+        Asymmetry["Hemispheric<br/>Asymmetry"]
+        Entropy["Spectral<br/>Entropy"]
+        Coherence["Cross-Channel<br/>Coherence"]
+        HbDiff["ΔHbO2 - ΔHbR"]
+    end
+
+    subgraph MultiDev["<b>Multi-Device</b>"]
+        Sync["Clock<br/>Synchronization"]
+        InterBrain["Inter-Brain<br/>Coherence"]
+        PLV["Phase Locking<br/>Value"]
+    end
+
+    subgraph ML["<b>ML Pipeline</b>"]
+        FeatVec["Feature<br/>Vector"]
+        Norm["Normalization"]
+        Inference["Model<br/>Inference"]
+        Intent["Intent<br/>Classification"]
+    end
+
+    subgraph Output["<b>Outputs</b>"]
+        Viz["Visualization"]
+        Stream["LSL/OSC<br/>Stream"]
+        Fingerprint["Neural<br/>Fingerprint"]
+        StimParams["Stimulation<br/>Parameters"]
+    end
+
+    %% EEG Path
+    EEGRaw --> Notch --> Bandpass --> FFT
+    FFT --> Welch --> Bands
+    Bands --> Delta & Theta & Alpha & Beta & Gamma
+
+    %% fNIRS Path
+    FNIRSRaw --> BeerLambert --> Align
+
+    %% EMG/EDA Path
+    EMGRaw --> RMS
+    EDARaw --> Decomp
+
+    %% Spectral to Features
+    Delta & Theta & Alpha & Beta & Gamma --> Power
+    Power --> Asymmetry
+    Power --> Entropy
+    Bands --> Coherence
+
+    %% Fusion
+    Bandpass --> Align
+    Align --> Resample --> AlignedSample
+    AlignedSample --> Features
+    BeerLambert --> HbDiff
+
+    %% Multi-device
+    AlignedSample --> Sync
+    Sync --> InterBrain
+    InterBrain --> PLV
+
+    %% ML Pipeline
+    Power & Asymmetry & Entropy & Coherence & HbDiff --> FeatVec
+    RMS --> FeatVec
+    Decomp --> FeatVec
+    FeatVec --> Norm --> Inference --> Intent
+
+    %% Outputs
+    Features --> Viz
+    Features --> Stream
+    FeatVec --> Fingerprint
+    Intent --> StimParams
+
+    classDef input fill:#e74c3c,stroke:#c0392b,color:#fff
+    classDef preproc fill:#f39c12,stroke:#d35400,color:#fff
+    classDef spectral fill:#3498db,stroke:#2980b9,color:#fff
+    classDef bands fill:#9b59b6,stroke:#8e44ad,color:#fff
+    classDef fusion fill:#2ecc71,stroke:#27ae60,color:#fff
+    classDef features fill:#1abc9c,stroke:#16a085,color:#fff
+    classDef multi fill:#e67e22,stroke:#d35400,color:#fff
+    classDef ml fill:#34495e,stroke:#2c3e50,color:#fff
+    classDef output fill:#27ae60,stroke:#1e8449,color:#fff
+
+    class Input input
+    class Preproc preproc
+    class Spectral spectral
+    class BandDef bands
+    class Fusion fusion
+    class Features features
+    class MultiDev multi
+    class ML ml
+    class Output output

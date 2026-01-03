@@ -1,0 +1,67 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4a90d9', 'primaryTextColor': '#fff', 'primaryBorderColor': '#2d5a87', 'lineColor': '#5a5a5a'}}}%%
+flowchart TB
+    subgraph Input["Neural Input"]
+        EEGData["EEG Data (8ch)"]
+        FNIRSData["fNIRS Data"]
+    end
+
+    subgraph Extraction["Feature Extraction"]
+        BandPower["Band Power"]
+        HRF["Hemodynamic Response"]
+    end
+
+    subgraph Decoder["Cortical Decoder"]
+        S1["S1 Somatosensory"]
+        A1["A1 Auditory"]
+        V1["V1 Visual"]
+        Insular["Insular Gustatory"]
+        Piriform["Piriform Olfactory"]
+    end
+
+    subgraph Receptors["Receptor Modalities"]
+        Tactile["Tactile<br/>Meissner, Merkel<br/>Pacinian, Ruffini"]
+        Auditory["Auditory<br/>Hair Cells<br/>Tonotopic"]
+        Visual["Visual<br/>Rods, Cones<br/>Ganglion Cells"]
+        Gustatory["Gustatory<br/>Sweet, Salty<br/>Sour, Bitter, Umami"]
+        Olfactory["Olfactory<br/>Receptor Neurons<br/>Glomeruli"]
+    end
+
+    subgraph Visualization["3D Visualization"]
+        Meshes["Sensory Meshes<br/>Skin, Cochlea, Retina<br/>Tongue, Olfactory Bulb"]
+        Heatmap["Activation Heatmap"]
+    end
+
+    subgraph Calibration["Bidirectional Calibration"]
+        Encoder["Cortical Encoder<br/>(Inverse Model)"]
+        Error["Prediction Error"]
+    end
+
+    EEGData --> BandPower
+    FNIRSData --> HRF
+    BandPower --> Decoder
+    HRF --> Decoder
+
+    S1 --> Tactile
+    A1 --> Auditory
+    V1 --> Visual
+    Insular --> Gustatory
+    Piriform --> Olfactory
+
+    Receptors --> Meshes --> Heatmap
+    Receptors --> Encoder
+    Encoder --> Error
+    Error --> Decoder
+
+    classDef input fill:#3498db,stroke:#2980b9,color:#fff
+    classDef extract fill:#2ecc71,stroke:#27ae60,color:#fff
+    classDef decode fill:#9b59b6,stroke:#8e44ad,color:#fff
+    classDef receptor fill:#e74c3c,stroke:#c0392b,color:#fff
+    classDef viz fill:#f39c12,stroke:#d35400,color:#fff
+    classDef calib fill:#34495e,stroke:#2c3e50,color:#fff
+
+    class Input input
+    class Extraction extract
+    class Decoder decode
+    class Receptors receptor
+    class Visualization viz
+    class Calibration calib
