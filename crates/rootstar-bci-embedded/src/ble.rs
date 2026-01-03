@@ -803,6 +803,8 @@ pub struct BlePeripheralState {
     packets_sent: AtomicU32,
     /// Packets dropped (queue full)
     packets_dropped: AtomicU32,
+    /// Current stimulation amplitude in microamps
+    stim_amplitude_ua: AtomicU16,
 }
 
 impl BlePeripheralState {
@@ -827,6 +829,7 @@ impl BlePeripheralState {
             uptime: AtomicU32::new(0),
             packets_sent: AtomicU32::new(0),
             packets_dropped: AtomicU32::new(0),
+            stim_amplitude_ua: AtomicU16::new(0),
         }
     }
 
@@ -927,6 +930,19 @@ impl BlePeripheralState {
         self.packets_dropped.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Get current stimulation amplitude in microamps
+    #[must_use]
+    pub fn stim_amplitude_ua(&self) -> u16 {
+        self.stim_amplitude_ua.load(Ordering::Relaxed)
+    }
+
+    /// Set stimulation amplitude in microamps (capped at 2000uA for safety)
+    pub fn set_stim_amplitude_ua(&self, amplitude_ua: u16) {
+        // Safety limit: max 2mA
+        let capped = amplitude_ua.min(2000);
+        self.stim_amplitude_ua.store(capped, Ordering::Relaxed);
+    }
+
     /// Set battery percentage
     pub fn set_battery(&self, percent: u8) {
         self.battery.store(percent.min(100), Ordering::Relaxed);
@@ -964,7 +980,7 @@ impl BlePeripheralState {
             sample_rate_hz: config.sample_rate_hz,
             channel_mask: config.channel_mask,
             gain: config.default_gain,
-            stim_amplitude_ua: 0, // TODO: from stim controller
+            stim_amplitude_ua: self.stim_amplitude_ua(),
             uptime_sec: self.uptime_sec(),
             sequence: 0,
         }

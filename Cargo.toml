@@ -14,6 +14,9 @@ members = [
     # Tier 3: Web (WASM visualization)
     "crates/rootstar-bci-web",
 
+    # Application: Unified executable for native viz and web server
+    "crates/rootstar-bci-app",
+
     # ========================================================================
     # VR Physics Engine (candidate for separate repo)
     # ========================================================================

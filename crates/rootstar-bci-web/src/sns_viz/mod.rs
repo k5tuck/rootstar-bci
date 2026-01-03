@@ -6,6 +6,8 @@
 //! - Tactile: Skin surface with mechanoreceptors
 //! - Auditory: Cochlea with hair cells
 //! - Gustatory: Tongue with papillae and taste buds
+//! - Visual: Retina with photoreceptors and V1 cortex with electrode mapping
+//! - Olfactory: Olfactory epithelium and bulb with glomeruli
 //!
 //! Note: Full WebGPU rendering is implemented in the renderer submodule.
 //! For WASM deployment, see SNS-20.
@@ -23,7 +25,7 @@ use rootstar_bci_core::sns::types::{BodyRegion, Ear, Finger, Hand, Side};
 
 pub use heatmap::{ActivationHeatmap, Colormap};
 pub use interaction::{InteractionEvent, InteractionHandler, ProbeResult};
-pub use meshes::{MeshData, MeshId, ReceptorPosition, Vertex};
+pub use meshes::{Eye, MeshData, MeshId, OlfactoryView, ReceptorPosition, RetinaView, Vertex};
 pub use pipeline::{BciVizPipeline, PlaybackController, SimulationGenerator};
 pub use wasm::{GpuBackend, SnsWebApp, WebDeployConfig};
 
@@ -411,6 +413,55 @@ impl SnsVizApp {
     pub fn load_tongue_mesh(&mut self) -> Result<(), JsValue> {
         let mesh_data = meshes::tongue::generate_tongue_mesh();
         let id = MeshId::Tongue;
+        self.scene.add_mesh(id.clone(), mesh_data);
+        self.selected_mesh = Some(id);
+
+        Ok(())
+    }
+
+    /// Load retina mesh (visual system)
+    ///
+    /// # Arguments
+    /// * `eye` - "left" or "right"
+    /// * `view` - "flat" (unrolled), "curved" (anatomical), or "cortex" (V1 mapping)
+    /// * `detail` - Level of detail (1-10, default 5)
+    pub fn load_retina_mesh(&mut self, eye: &str, view: &str, detail: u32) -> Result<(), JsValue> {
+        let eye_enum = match eye.to_lowercase().as_str() {
+            "left" => Eye::Left,
+            "right" => Eye::Right,
+            _ => return Err(JsValue::from_str("Invalid eye: use 'left' or 'right'")),
+        };
+
+        let view_enum = match view.to_lowercase().as_str() {
+            "flat" => RetinaView::Flat,
+            "curved" => RetinaView::Curved,
+            "cortex" | "v1" => RetinaView::Cortex,
+            _ => return Err(JsValue::from_str("Invalid view: use 'flat', 'curved', or 'cortex'")),
+        };
+
+        let mesh_data = meshes::retina::generate_retina_mesh(eye_enum, view_enum, detail);
+        let id = MeshId::Retina { eye: eye_enum, view: view_enum };
+        self.scene.add_mesh(id.clone(), mesh_data);
+        self.selected_mesh = Some(id);
+
+        Ok(())
+    }
+
+    /// Load olfactory mesh (smell system)
+    ///
+    /// # Arguments
+    /// * `view` - "epithelium" (receptor neurons), "bulb" (glomeruli), or "combined"
+    /// * `detail` - Level of detail (1-10, default 5)
+    pub fn load_olfactory_mesh(&mut self, view: &str, detail: u32) -> Result<(), JsValue> {
+        let view_enum = match view.to_lowercase().as_str() {
+            "epithelium" | "epi" => OlfactoryView::Epithelium,
+            "bulb" => OlfactoryView::Bulb,
+            "combined" | "both" => OlfactoryView::Combined,
+            _ => return Err(JsValue::from_str("Invalid view: use 'epithelium', 'bulb', or 'combined'")),
+        };
+
+        let mesh_data = meshes::olfactory::generate_olfactory_mesh(view_enum, detail);
+        let id = MeshId::Olfactory { view: view_enum };
         self.scene.add_mesh(id.clone(), mesh_data);
         self.selected_mesh = Some(id);
 

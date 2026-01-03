@@ -1,0 +1,29 @@
+# Rootstar BCI Development Dockerfile
+# Includes cargo-watch for hot reloading
+
+FROM rust:1.85-bookworm
+
+WORKDIR /app
+
+# Install development dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    libudev-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cargo-watch for hot reloading
+RUN cargo install cargo-watch
+
+# Copy workspace files
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ crates/
+
+# Build dependencies (cached layer)
+RUN cargo build -p rootstar-bci-app --features server || true
+
+EXPOSE 8080
+
+# Default: run with cargo watch for hot reload
+CMD ["cargo", "watch", "-x", "run -p rootstar-bci-app --features server -- server --bind 0.0.0.0"]
