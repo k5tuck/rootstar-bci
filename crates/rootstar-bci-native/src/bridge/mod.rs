@@ -43,7 +43,7 @@ pub mod streaming;
 
 // Re-export key types
 pub use device_manager::{
-    ConnectionState, ConnectionType, DeviceCapabilities, DeviceError, DeviceEvent,
+    ConnectionState, ConnectionType, DeviceCapabilities, DeviceCommand, DeviceError, DeviceEvent,
     DeviceInfo, DeviceManager, DeviceManagerConfig, DeviceResult, DeviceState,
 };
 

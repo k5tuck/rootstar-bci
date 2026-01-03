@@ -42,9 +42,20 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use rootstar_bci_core::protocol::{DeviceId, PacketHeaderV2, PacketType, ProtocolVersion};
+
+/// Command to send to a device
+#[derive(Debug)]
+pub struct DeviceCommand {
+    /// Packet type
+    pub packet_type: PacketType,
+    /// Payload data
+    pub payload: Vec<u8>,
+    /// Response channel for acknowledgement
+    pub response_tx: oneshot::Sender<Result<(), String>>,
+}
 
 // ============================================================================
 // Error Types
@@ -410,6 +421,9 @@ pub struct DeviceManager {
     /// Connected devices by ID
     devices: Arc<RwLock<HashMap<DeviceId, DeviceState>>>,
 
+    /// Command senders per device
+    command_senders: Arc<RwLock<HashMap<DeviceId, mpsc::Sender<DeviceCommand>>>>,
+
     /// Event sender
     event_tx: mpsc::Sender<DeviceEvent>,
 
@@ -447,6 +461,7 @@ impl DeviceManager {
         Self {
             config,
             devices: Arc::new(RwLock::new(HashMap::new())),
+            command_senders: Arc::new(RwLock::new(HashMap::new())),
             event_tx,
             event_rx,
             next_color_index: 0,
@@ -631,12 +646,22 @@ impl DeviceManager {
         let bridge = UsbBridge::open(port, baud_rate)
             .map_err(|e| DeviceError::ConnectionFailed(e.to_string()))?;
 
-        // Spawn reader task
+        // Create command channel
+        let (cmd_tx, cmd_rx) = mpsc::channel::<DeviceCommand>(32);
+
+        // Store command sender
+        {
+            let mut senders = self.command_senders.write().map_err(|_| DeviceError::Busy)?;
+            senders.insert(device_id, cmd_tx);
+        }
+
+        // Spawn reader/writer task
         let event_tx = self.event_tx.clone();
         let devices = Arc::clone(&self.devices);
+        let command_senders = Arc::clone(&self.command_senders);
 
         tokio::spawn(async move {
-            Self::usb_reader_task(device_id, bridge, event_tx, devices).await;
+            Self::usb_device_task(device_id, bridge, cmd_rx, event_tx, devices, command_senders).await;
         });
 
         Ok(())
@@ -648,15 +673,36 @@ impl DeviceManager {
         Err(DeviceError::ConnectionFailed("USB support not enabled".to_string()))
     }
 
-    /// USB reader task.
+    /// USB device task - handles both reading and writing.
     #[cfg(feature = "usb")]
-    async fn usb_reader_task(
+    async fn usb_device_task(
         device_id: DeviceId,
         mut bridge: crate::bridge::usb::UsbBridge,
+        mut cmd_rx: mpsc::Receiver<DeviceCommand>,
         event_tx: mpsc::Sender<DeviceEvent>,
         devices: Arc<RwLock<HashMap<DeviceId, DeviceState>>>,
+        command_senders: Arc<RwLock<HashMap<DeviceId, mpsc::Sender<DeviceCommand>>>>,
     ) {
         loop {
+            // Check for commands first (non-blocking)
+            while let Ok(cmd) = cmd_rx.try_recv() {
+                let result = bridge.send_packet(cmd.packet_type, &cmd.payload);
+                let response = match result {
+                    Ok(()) => {
+                        // Update packets sent count
+                        if let Ok(mut devices) = devices.write() {
+                            if let Some(state) = devices.get_mut(&device_id) {
+                                state.packets_sent += 1;
+                            }
+                        }
+                        Ok(())
+                    }
+                    Err(e) => Err(e.to_string()),
+                };
+                let _ = cmd.response_tx.send(response);
+            }
+
+            // Try to read a packet
             match bridge.read_packet() {
                 Ok(Some((header, payload))) => {
                     // Update device state
@@ -696,6 +742,11 @@ impl DeviceManager {
                     }
                 }
             }
+        }
+
+        // Clean up command sender on disconnect
+        if let Ok(mut senders) = command_senders.write() {
+            senders.remove(&device_id);
         }
     }
 
@@ -810,27 +861,45 @@ impl DeviceManager {
         packet_type: PacketType,
         payload: &[u8],
     ) -> DeviceResult<()> {
-        let devices = self.devices.read().map_err(|_| DeviceError::Busy)?;
+        // Check device is connected
+        {
+            let devices = self.devices.read().map_err(|_| DeviceError::Busy)?;
 
-        let state = devices.get(&device_id)
-            .ok_or_else(|| DeviceError::NotFound(device_id.to_string()))?;
+            let state = devices.get(&device_id)
+                .ok_or_else(|| DeviceError::NotFound(device_id.to_string()))?;
 
-        if !state.is_connected() {
-            return Err(DeviceError::Disconnected(device_id));
+            if !state.is_connected() {
+                return Err(DeviceError::Disconnected(device_id));
+            }
         }
 
-        // Build V2 header
-        let _header = PacketHeaderV2::new(
-            device_id,
+        // Get command sender for this device
+        let cmd_tx = {
+            let senders = self.command_senders.read().map_err(|_| DeviceError::Busy)?;
+            senders.get(&device_id).cloned()
+        };
+
+        let cmd_tx = cmd_tx.ok_or_else(|| DeviceError::Disconnected(device_id))?;
+
+        // Create response channel
+        let (response_tx, response_rx) = oneshot::channel();
+
+        // Build command
+        let command = DeviceCommand {
             packet_type,
-            0, // Sequence will be set by bridge
-            payload.len() as u16,
-        );
+            payload: payload.to_vec(),
+            response_tx,
+        };
 
-        // TODO: Send via appropriate bridge based on connection type
-        // This requires storing bridge handles in the device state
+        // Send command to device task
+        cmd_tx.send(command).await
+            .map_err(|_| DeviceError::Disconnected(device_id))?;
 
-        Ok(())
+        // Wait for response
+        let result = response_rx.await
+            .map_err(|_| DeviceError::Communication("Command response channel closed".to_string()))?;
+
+        result.map_err(|e| DeviceError::Communication(e))
     }
 
     /// Broadcast a command to all connected devices.

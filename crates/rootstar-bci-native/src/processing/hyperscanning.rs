@@ -35,6 +35,7 @@ use std::time::{Duration, Instant};
 
 use rootstar_bci_core::protocol::DeviceId;
 use rootstar_bci_core::types::EegSample;
+use rustfft::{num_complex::Complex, FftPlanner};
 
 /// Sync marker types for cross-device alignment
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -434,7 +435,7 @@ impl HyperscanningSession {
                 .collect();
 
             if ref_signal.len() == other_signal.len() {
-                let coherence = Self::calculate_coherence_simple(
+                let coherence = Self::calculate_coherence_welch(
                     &ref_signal,
                     &other_signal,
                     freq_band,
@@ -459,37 +460,128 @@ impl HyperscanningSession {
         })
     }
 
-    /// Simple coherence calculation (Pearson correlation of band-filtered signals)
-    fn calculate_coherence_simple(
+    /// Welch's coherence calculation using FFT
+    ///
+    /// Computes magnitude-squared coherence between two signals using Welch's method:
+    /// - Segments signals into overlapping windows
+    /// - Computes cross-spectral density and auto-spectral densities
+    /// - Coherence = |Pxy|^2 / (Pxx * Pyy)
+    fn calculate_coherence_welch(
         signal1: &[f32],
         signal2: &[f32],
-        _freq_band: (f32, f32),
-        _sample_rate_hz: f32,
+        freq_band: (f32, f32),
+        sample_rate_hz: f32,
     ) -> f32 {
-        // Simplified: correlation-based pseudo-coherence
-        // TODO: Use proper Welch's coherence with FFT when rustfft is available
-        if signal1.len() != signal2.len() || signal1.is_empty() {
+        if signal1.len() != signal2.len() || signal1.len() < 64 {
             return 0.0;
         }
 
-        let n = signal1.len() as f32;
-        let mean1: f32 = signal1.iter().sum::<f32>() / n;
-        let mean2: f32 = signal2.iter().sum::<f32>() / n;
+        // Welch's method parameters
+        let segment_len = 64.min(signal1.len()); // Segment size (power of 2)
+        let overlap = segment_len / 2; // 50% overlap
+        let step = segment_len - overlap;
+        let n_segments = (signal1.len() - overlap) / step;
 
-        let mut cov = 0.0f32;
-        let mut var1 = 0.0f32;
-        let mut var2 = 0.0f32;
-
-        for (&x, &y) in signal1.iter().zip(signal2.iter()) {
-            let d1 = x - mean1;
-            let d2 = y - mean2;
-            cov += d1 * d2;
-            var1 += d1 * d1;
-            var2 += d2 * d2;
+        if n_segments == 0 {
+            return 0.0;
         }
 
-        if var1 > 0.0 && var2 > 0.0 {
-            (cov / (var1.sqrt() * var2.sqrt())).abs()
+        // Create FFT planner
+        let mut planner = FftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(segment_len);
+
+        // Hann window
+        let window: Vec<f32> = (0..segment_len)
+            .map(|i| {
+                0.5 * (1.0
+                    - (2.0 * std::f32::consts::PI * i as f32 / (segment_len - 1) as f32).cos())
+            })
+            .collect();
+
+        // Window normalization factor
+        let window_power: f32 = window.iter().map(|w| w * w).sum();
+
+        // Accumulate spectral estimates
+        let n_freqs = segment_len / 2 + 1;
+        let mut pxx = vec![0.0f32; n_freqs]; // Auto-spectral density of signal1
+        let mut pyy = vec![0.0f32; n_freqs]; // Auto-spectral density of signal2
+        let mut pxy_re = vec![0.0f32; n_freqs]; // Cross-spectral density (real)
+        let mut pxy_im = vec![0.0f32; n_freqs]; // Cross-spectral density (imag)
+
+        let mut scratch = vec![Complex::new(0.0f32, 0.0f32); fft.get_inplace_scratch_len()];
+
+        for seg_idx in 0..n_segments {
+            let start = seg_idx * step;
+
+            // Apply window and compute FFT for signal1
+            let mut buf1: Vec<Complex<f32>> = signal1[start..start + segment_len]
+                .iter()
+                .zip(window.iter())
+                .map(|(&s, &w)| Complex::new(s * w, 0.0))
+                .collect();
+            fft.process_with_scratch(&mut buf1, &mut scratch);
+
+            // Apply window and compute FFT for signal2
+            let mut buf2: Vec<Complex<f32>> = signal2[start..start + segment_len]
+                .iter()
+                .zip(window.iter())
+                .map(|(&s, &w)| Complex::new(s * w, 0.0))
+                .collect();
+            fft.process_with_scratch(&mut buf2, &mut scratch);
+
+            // Accumulate spectral estimates
+            for k in 0..n_freqs {
+                let x = buf1[k];
+                let y = buf2[k];
+
+                // Auto-spectral densities
+                pxx[k] += x.re * x.re + x.im * x.im;
+                pyy[k] += y.re * y.re + y.im * y.im;
+
+                // Cross-spectral density: X * conj(Y)
+                pxy_re[k] += x.re * y.re + x.im * y.im;
+                pxy_im[k] += x.im * y.re - x.re * y.im;
+            }
+        }
+
+        // Normalize by number of segments
+        let n_seg_f = n_segments as f32;
+        for k in 0..n_freqs {
+            pxx[k] /= n_seg_f;
+            pyy[k] /= n_seg_f;
+            pxy_re[k] /= n_seg_f;
+            pxy_im[k] /= n_seg_f;
+        }
+
+        // Compute coherence in the frequency band
+        let freq_resolution = sample_rate_hz / segment_len as f32;
+        let start_bin = ((freq_band.0 / freq_resolution).floor() as usize).min(n_freqs - 1);
+        let end_bin = ((freq_band.1 / freq_resolution).ceil() as usize).min(n_freqs - 1);
+
+        if start_bin >= end_bin {
+            return 0.0;
+        }
+
+        // Average coherence across frequency bins in the band
+        let mut coherence_sum = 0.0f32;
+        let mut valid_bins = 0;
+
+        for k in start_bin..=end_bin {
+            let pxx_k = pxx[k];
+            let pyy_k = pyy[k];
+            let pxy_mag_sq = pxy_re[k] * pxy_re[k] + pxy_im[k] * pxy_im[k];
+
+            // Coherence = |Pxy|^2 / (Pxx * Pyy)
+            let denominator = pxx_k * pyy_k;
+            if denominator > 1e-10 {
+                let coh = pxy_mag_sq / denominator;
+                coherence_sum += coh.min(1.0); // Clamp to [0, 1]
+                valid_bins += 1;
+            }
+        }
+
+        if valid_bins > 0 {
+            coherence_sum / valid_bins as f32
         } else {
             0.0
         }
@@ -627,21 +719,28 @@ mod tests {
     }
 
     #[test]
-    fn test_coherence_simple() {
-        // Test with perfectly correlated signals
-        let signal1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let signal2 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+    fn test_coherence_welch() {
+        // Generate correlated signals: two identical 10 Hz sine waves
+        let sample_rate = 256.0;
+        let n_samples = 256;
+        let signal1: Vec<f32> = (0..n_samples)
+            .map(|i| (2.0 * std::f32::consts::PI * 10.0 * i as f32 / sample_rate).sin())
+            .collect();
+        let signal2 = signal1.clone();
 
+        // Test with perfectly correlated signals - should have high coherence
         let coherence =
-            HyperscanningSession::calculate_coherence_simple(&signal1, &signal2, (8.0, 13.0), 250.0);
+            HyperscanningSession::calculate_coherence_welch(&signal1, &signal2, (8.0, 13.0), sample_rate);
+        assert!(coherence > 0.9, "Identical signals should have coherence > 0.9, got {}", coherence);
 
-        assert!((coherence - 1.0).abs() < 0.01);
-
-        // Test with uncorrelated signals
-        let signal3 = vec![1.0, -1.0, 1.0, -1.0, 1.0];
+        // Test with uncorrelated signals (different frequencies)
+        let signal3: Vec<f32> = (0..n_samples)
+            .map(|i| (2.0 * std::f32::consts::PI * 25.0 * i as f32 / sample_rate).sin())
+            .collect();
         let coherence2 =
-            HyperscanningSession::calculate_coherence_simple(&signal1, &signal3, (8.0, 13.0), 250.0);
+            HyperscanningSession::calculate_coherence_welch(&signal1, &signal3, (8.0, 13.0), sample_rate);
 
-        assert!(coherence2 < 0.5);
+        // Different frequency signals should have lower coherence in alpha band
+        assert!(coherence2 < coherence, "Different frequency signals should have lower coherence");
     }
 }
