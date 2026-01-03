@@ -1,6 +1,6 @@
 # Rootstar BCI Platform
 
-A modular Brain-Computer Interface (BCI) platform built in Rust for multi-modal neural sensing and neurostimulation.
+A modular Brain-Computer Interface (BCI) platform built in Rust for multi-modal neural sensing, neurostimulation, and immersive sensory experiences.
 
 ## Overview
 
@@ -11,6 +11,7 @@ Rootstar BCI is an embedded-first platform that combines:
 - **EDA** (Electrodermal Activity) - Skin conductance monitoring
 - **Neurostimulation** - tDCS/tACS/Photobiomodulation support
 - **Multi-device** - Bluetooth LE connectivity and hyperscanning
+- **Sensory Neural Simulation (SNS)** - Bidirectional neural encoding for VR/XR
 
 ## Architecture
 
@@ -18,10 +19,85 @@ The platform uses a tiered architecture:
 
 | Tier | Crate | Description |
 |------|-------|-------------|
-| 0 | `rootstar-bci-core` | `no_std` compatible types, math, and protocols |
+| 0 | `rootstar-bci-core` | `no_std` compatible types, math, protocols, and SNS encoding |
 | 1 | `rootstar-bci-embedded` | ESP32 firmware and hardware drivers |
 | 2 | `rootstar-bci-native` | Host-side processing, ML inference, visualization |
 | 3 | `rootstar-bci-web` | WASM-based web interface and 3D visualization |
+| - | `rootstar-bci-app` | Unified CLI application (native GUI + WebSocket server) |
+
+### Physics Engine (VR/XR)
+
+| Crate | Description |
+|-------|-------------|
+| `rootstar-physics-core` | Physics simulation core with multi-sensory haptics |
+| `rootstar-physics-mesh` | 3D mesh representations for neural mapping |
+| `rootstar-physics-bridge` | Integration bridge between BCI and physics systems |
+
+## Installation
+
+### CLI Application
+
+```bash
+# Install from source
+cargo install --path crates/rootstar-bci-app
+
+# Or build and run directly
+cargo build -p rootstar-bci-app --release
+./target/release/rootstar --help
+```
+
+### Docker Deployment (Server Mode)
+
+```bash
+# Build and run with Docker Compose
+docker-compose up -d
+
+# Or build manually
+docker build -t rootstar-bci .
+docker run -p 8080:8080 rootstar-bci server --bind 0.0.0.0:8080
+```
+
+## CLI Usage
+
+The `rootstar` CLI provides unified access to all platform features:
+
+```bash
+# Run with native visualization (default)
+rootstar native
+
+# Run with simulated data
+rootstar native --simulate --sample-rate 250 --alpha-power 0.8
+
+# Run with USB device connection
+rootstar native --usb /dev/ttyUSB0
+
+# Run with BLE device connection
+rootstar native --ble --device-name "Rootstar-BCI"
+
+# Run WebSocket server mode
+rootstar server --bind 0.0.0.0:8080
+
+# List available devices
+rootstar list-usb
+rootstar list-ble
+```
+
+### Data Sources
+
+| Source | Flag | Description |
+|--------|------|-------------|
+| Simulate | `--simulate` | Generate synthetic EEG with configurable parameters |
+| USB | `--usb <port>` | Connect via USB/Serial (auto-detects baud rate) |
+| BLE | `--ble` | Connect via Bluetooth Low Energy |
+
+### Simulation Parameters
+
+```bash
+rootstar native --simulate \
+  --sample-rate 250 \
+  --alpha-power 0.8 \
+  --noise-level 0.1
+```
 
 ## Getting Started
 
@@ -312,9 +388,103 @@ session.set_reference_device(device1_id)?;
 session.add_sample(device1_id, eeg_sample1, timestamp1)?;
 session.add_sample(device2_id, eeg_sample2, timestamp2)?;
 
-// Calculate inter-brain coherence
-let coherence = session.compute_coherence(FrequencyBand::Alpha)?;
+// Calculate inter-brain coherence (using Welch's method with FFT)
+let coherence = session.compute_coherence(channel, (8.0, 13.0), 250.0)?;
 ```
+
+## Sensory Neural Simulation (SNS)
+
+The SNS system provides bidirectional mapping between neural signals and simulated sensory experiences for VR/XR applications.
+
+### Supported Modalities
+
+| Modality | Encoding | Decoding | Description |
+|----------|----------|----------|-------------|
+| Tactile | ✓ | ✓ | Touch, pressure, vibration, texture |
+| Auditory | ✓ | ✓ | Cochlear-based frequency encoding |
+| Gustatory | ✓ | ✓ | Taste (sweet, sour, salty, bitter, umami) |
+| Visual | ✓ | ✓ | Retinal ganglion cell simulation |
+| Olfactory | ✓ | ✓ | Olfactory bulb glomerular patterns |
+
+### Visual System
+
+Retinal simulation with realistic receptor distributions:
+
+```rust
+use rootstar_bci_core::sns::visual::{RetinaBuilder, RetinalRegion, PhotoreceptorType};
+
+// Create retina with foveal and peripheral regions
+let retina = RetinaBuilder::new()
+    .with_region(RetinalRegion::Fovea, 1000)      // High-density cones
+    .with_region(RetinalRegion::Parafovea, 500)
+    .with_region(RetinalRegion::Periphery, 200)   // Rod-dominated
+    .build();
+
+// Encode visual stimulus
+let ganglion_response = retina.encode_stimulus(&image_patch);
+
+// Map to cortical channels (V1 retinotopic)
+let cortical_activity = visual_cortex.map_to_channels(&ganglion_response);
+```
+
+### Olfactory System
+
+Glomerular-based odor encoding with mixture support:
+
+```rust
+use rootstar_bci_core::sns::olfactory::{OlfactoryBulb, Odorant};
+
+let bulb = OlfactoryBulb::new(100);  // 100 glomeruli
+
+// Create odorant with molecular descriptors
+let coffee = Odorant::new("coffee")
+    .with_descriptor(MolecularDescriptor::Aromatic, 0.8)
+    .with_descriptor(MolecularDescriptor::Roasted, 0.9);
+
+// Encode odor concentration
+let glomerular_pattern = bulb.encode_odorant(&coffee, concentration);
+
+// Mix multiple odorants
+let mixture_pattern = bulb.encode_mixture(&[
+    (coffee, 0.6),
+    (vanilla, 0.3),
+]);
+```
+
+### VR/XR Integration
+
+The physics engine provides game engine integration:
+
+```rust
+use rootstar_physics_core::{PhysicsWorld, HapticFeedback, SensationLimiter};
+use rootstar_physics_bridge::GameEngineApi;
+
+// Initialize physics world with sensation limiting
+let mut world = PhysicsWorld::new();
+let limiter = SensationLimiter::new()
+    .with_max_intensity(0.8)
+    .with_ramp_time_ms(100);
+
+// Create game engine API
+let api = GameEngineApi::new(world, limiter);
+
+// Process collision with multi-sensory feedback
+let feedback = api.process_collision(collision_event)?;
+
+// Feedback includes:
+// - Haptic: force, vibration, texture
+// - Auditory: impact sound parameters
+// - Visual: flash/blur effects
+// - Proprioceptive: body position sense
+```
+
+### 3D Visualization Meshes
+
+The system includes 3D mesh representations for neural mapping visualization:
+
+- **Retina mesh**: Fovea/parafovea/periphery regions with cone/rod density visualization
+- **Olfactory bulb mesh**: Glomerular layer with activation heatmaps
+- **Cortical surface**: Somatotopic, tonotopic, and retinotopic mapping
 
 ## Native Visualization
 
@@ -422,7 +592,9 @@ The platform enforces these hardware-level safety limits:
 
 ```
 rootstar-bci/
-├── Cargo.toml              # Workspace configuration
+├── Cargo.toml                   # Workspace configuration
+├── Dockerfile                   # Docker deployment
+├── docker-compose.yml           # Multi-container setup
 ├── crates/
 │   ├── rootstar-bci-core/       # Tier 0: no_std core types
 │   │   └── src/
@@ -430,7 +602,13 @@ rootstar-bci/
 │   │       ├── error.rs         # Error handling
 │   │       ├── math.rs          # Filters, Beer-Lambert
 │   │       ├── protocol.rs      # Serial protocol
-│   │       └── sns/             # Spiking Neural Stochastic
+│   │       ├── fingerprint/     # Neural fingerprinting
+│   │       └── sns/             # Sensory Neural Simulation
+│   │           ├── tactile.rs   # Touch/pressure encoding
+│   │           ├── auditory.rs  # Cochlear simulation
+│   │           ├── gustatory.rs # Taste encoding
+│   │           ├── visual.rs    # Retinal simulation
+│   │           └── olfactory.rs # Olfactory bulb model
 │   │
 │   ├── rootstar-bci-embedded/   # Tier 1: ESP32 firmware
 │   │   └── src/
@@ -448,6 +626,7 @@ rootstar-bci/
 │   │       │   ├── usb.rs       # USB/Serial
 │   │       │   ├── ble.rs       # Bluetooth LE
 │   │       │   ├── device_manager.rs
+│   │       │   ├── device_context.rs
 │   │       │   └── streaming/   # External protocols
 │   │       │       ├── lsl.rs   # Lab Streaming Layer
 │   │       │       ├── osc.rs   # Open Sound Control
@@ -456,16 +635,41 @@ rootstar-bci/
 │   │       │   ├── filters.rs
 │   │       │   ├── fft.rs
 │   │       │   ├── fusion.rs
-│   │       │   └── hyperscanning.rs
+│   │       │   └── hyperscanning.rs  # Welch's coherence
+│   │       ├── fingerprint/     # Neural fingerprint extraction
 │   │       ├── ml/              # Feature extraction
 │   │       ├── sns/             # SNS encoding/decoding
+│   │       │   ├── encoder.rs   # Neural → Sensation
+│   │       │   ├── decoder.rs   # Sensation → Neural
+│   │       │   ├── cortical_map.rs
+│   │       │   └── simulation.rs
 │   │       └── viz/             # Native visualization
 │   │           ├── dashboard.rs
 │   │           └── electrode_status.rs
 │   │
-│   └── rootstar-bci-web/        # Tier 3: WASM web interface
+│   ├── rootstar-bci-web/        # Tier 3: WASM web interface
+│   │   └── src/
+│   │       └── sns_viz/         # 3D visualization
+│   │
+│   ├── rootstar-bci-app/        # Unified CLI application
+│   │   └── src/
+│   │       └── main.rs          # CLI entry point
+│   │
+│   ├── rootstar-physics-core/   # Physics simulation
+│   │   └── src/
+│   │       ├── world.rs         # Physics world
+│   │       ├── haptics.rs       # Haptic feedback
+│   │       └── limiter.rs       # Sensation limiting
+│   │
+│   ├── rootstar-physics-mesh/   # 3D mesh representations
+│   │   └── src/
+│   │       ├── retina.rs        # Visual system mesh
+│   │       ├── olfactory.rs     # Olfactory bulb mesh
+│   │       └── cortical.rs      # Cortical surface mesh
+│   │
+│   └── rootstar-physics-bridge/ # BCI ↔ Physics integration
 │       └── src/
-│           └── sns_viz/         # 3D visualization
+│           └── game_engine.rs   # Game engine API
 ```
 
 ## Technical Specifications
@@ -497,25 +701,57 @@ rootstar-bci/
 
 ## Features
 
+### Core Platform
 - [x] `no_std` compatible core for embedded systems
 - [x] Fixed-point math (Q24.8) for embedded constraints
 - [x] Multi-modal sensing (EEG + fNIRS + EMG + EDA)
 - [x] Real-time signal processing
 - [x] Beer-Lambert hemodynamic calculation
 - [x] IIR/Biquad digital filtering
-- [x] FFT spectral analysis
+- [x] FFT spectral analysis (Welch's method coherence)
 - [x] EEG + fNIRS data fusion
+- [x] Neural fingerprinting
+
+### Connectivity
 - [x] USB/Serial device communication
-- [x] Bluetooth LE connectivity
+- [x] Bluetooth LE connectivity with GATT server
 - [x] Multi-device support & hyperscanning
-- [x] Native GPU visualization (wgpu/egui)
-- [x] Electrode status visualization
-- [x] WASM web visualization
 - [x] Lab Streaming Layer (LSL) integration
 - [x] OSC streaming for audio apps
 - [x] BrainFlow-compatible format
+- [x] WebSocket server for web clients
+
+### Visualization
+- [x] Native GPU visualization (wgpu/egui)
+- [x] Electrode status visualization
+- [x] WASM web visualization
+- [x] 3D sensory mesh visualization
+
+### Sensory Neural Simulation (SNS)
+- [x] Tactile encoding (mechanoreceptors)
+- [x] Auditory encoding (cochlear model)
+- [x] Gustatory encoding (taste receptor cells)
+- [x] Visual encoding (retinal ganglion cells)
+- [x] Olfactory encoding (glomerular patterns)
+- [x] Bidirectional cortical mapping
+
+### VR/XR Integration
+- [x] Physics engine with haptic feedback
+- [x] Multi-sensory sensation limiting
+- [x] Game engine integration API
+- [x] 3D visualization meshes (retina, olfactory bulb)
+
+### CLI & Deployment
+- [x] Unified CLI application
+- [x] Simulated data mode
+- [x] Docker containerization
+- [x] WebSocket server mode
+
+### Roadmap
 - [ ] ONNX ML inference
-- [ ] Full neurostimulation implementation
+- [ ] Full neurostimulation hardware integration
+- [ ] Mobile app (iOS/Android)
+- [ ] Cloud synchronization
 
 ## License
 
