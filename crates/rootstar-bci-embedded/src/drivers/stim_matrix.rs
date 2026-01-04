@@ -519,32 +519,230 @@ where
         Ok(())
     }
 
-    /// Measure actual output current
+    /// Measure actual output current.
+    ///
+    /// Reads the current sense ADC to get the actual current flowing through
+    /// the stimulation electrodes. Uses the sense resistor to convert voltage
+    /// to current.
     fn measure_current(&mut self) -> Result<CurrentMeasurement, StimError> {
-        // Read from current sense ADC
-        // (Simplified - actual implementation depends on ADC)
+        // Read ADC value from current sense resistor
+        // ADC command format: [start_bit | single_ended | channel | don't_care]
+        // Using MCP3008 or similar 10-bit ADC
+        let adc_cmd = [0x01, 0x80, 0x00]; // Start, single-ended, channel 0
+        let mut rx_buf = [0u8; 3];
+
+        let _ = self.adc.transfer(&mut rx_buf, &adc_cmd);
+
+        // Extract 10-bit ADC value
+        // Response: [x, x, MSB:2bits, LSB:8bits]
+        let adc_value = (((rx_buf[1] & 0x03) as u16) << 8) | (rx_buf[2] as u16);
+
+        // Convert ADC value to voltage
+        // V = ADC * Vref / 1024 (10-bit ADC)
+        let adc_vref_mv = 3300u32; // Typical 3.3V ADC reference
+        let voltage_mv = (adc_value as u32 * adc_vref_mv / 1024) as i16;
+
+        // Convert voltage to current using sense resistor
+        // I = V / R (in µA = mV * 1000 / Ω)
+        let current_ua = (voltage_mv as i32 * 1000 / self.config.sense_resistor_ohm as i32) as i16;
+
+        // Determine active electrode for the measurement
+        let active_electrode = self.electrode_states
+            .iter()
+            .position(|&s| s == ElectrodeState::Anode)
+            .unwrap_or(0) as u8;
+
         Ok(CurrentMeasurement {
-            current_ua: 0,
-            voltage_mv: 0,
-            electrode: 0,
+            current_ua,
+            voltage_mv,
+            electrode: active_electrode,
         })
     }
 
-    /// Measure electrode impedance
+    /// Measure electrode impedance using small test current.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Disconnect all electrodes except the target
+    /// 2. Apply small test current (100µA, safe level)
+    /// 3. Measure resulting voltage
+    /// 4. Compute impedance: Z = V / I
+    /// 5. Restore previous electrode configuration
+    ///
+    /// # Returns
+    ///
+    /// Impedance measurement including quality indicator.
+    /// Quality is based on signal stability and consistency.
     pub fn measure_impedance(&mut self, electrode: u8) -> Result<ImpedanceMeasurement, StimError> {
-        // Temporarily configure for impedance measurement
         let idx = electrode as usize;
         if idx >= MAX_ELECTRODES {
             return Err(StimError::DacError);
         }
 
-        // Apply small test current and measure voltage
-        // (Simplified - actual implementation more complex)
+        // Store current stimulation state to restore later
+        let was_active = self.active_protocol.is_some();
+        let previous_states = self.electrode_states;
+
+        // Temporarily disable outputs
+        let _ = self.enable.set_low();
+
+        // Configure only the target electrode as anode
+        // Use a common ground electrode as cathode
+        let common_ground = self.find_ground_electrode(electrode);
+        let mut test_config = [0u8; 8];
+
+        // Set anode bit
+        test_config[idx / 8] |= 0x80 >> (idx % 8);
+        // Set cathode bit for ground electrode
+        let gnd_idx = common_ground as usize;
+        test_config[gnd_idx / 8] |= 0x40 >> (gnd_idx % 8);
+
+        // Apply test configuration
+        let _ = self.cs_matrix.set_low();
+        let _ = self.spi.write(&test_config);
+        let _ = self.cs_matrix.set_high();
+
+        self.electrode_states[idx] = ElectrodeState::Impedance;
+        self.electrode_states[gnd_idx] = ElectrodeState::Cathode;
+
+        // Apply small test current (100µA)
+        const TEST_CURRENT_UA: u16 = 100;
+        self.set_current(TEST_CURRENT_UA)?;
+        let _ = self.enable.set_high();
+
+        // Wait for settling (would use delay in real implementation)
+        // For now, take multiple measurements and average
+        let mut voltage_sum: i32 = 0;
+        let mut min_voltage: i16 = i16::MAX;
+        let mut max_voltage: i16 = i16::MIN;
+        const N_SAMPLES: usize = 8;
+
+        for _ in 0..N_SAMPLES {
+            let measurement = self.measure_current()?;
+            let v = measurement.voltage_mv;
+            voltage_sum += v as i32;
+            min_voltage = min_voltage.min(v);
+            max_voltage = max_voltage.max(v);
+        }
+
+        // Disable output
+        let _ = self.enable.set_low();
+
+        // Calculate average voltage
+        let avg_voltage_mv = (voltage_sum / N_SAMPLES as i32) as i16;
+
+        // Calculate impedance: Z = V / I
+        // Z (kΩ) = V (mV) / I (µA) * 1000
+        let impedance_kohm = if TEST_CURRENT_UA > 0 {
+            ((avg_voltage_mv.abs() as u32 * 1000) / TEST_CURRENT_UA as u32) as u16
+        } else {
+            0
+        };
+
+        // Calculate quality based on measurement stability
+        // High variance = low quality, low variance = high quality
+        let variance = (max_voltage - min_voltage) as u32;
+        let quality = if avg_voltage_mv.abs() > 0 {
+            let relative_variance = (variance * 100) / avg_voltage_mv.abs() as u32;
+            100u8.saturating_sub(relative_variance.min(100) as u8)
+        } else {
+            0
+        };
+
+        // Additional quality checks
+        let adjusted_quality = if impedance_kohm < 1 {
+            // Very low impedance suggests short circuit
+            quality.saturating_sub(50)
+        } else if impedance_kohm > 50 {
+            // Very high impedance suggests poor contact
+            quality.saturating_sub(30)
+        } else {
+            quality
+        };
+
+        // Restore previous configuration
+        self.electrode_states = previous_states;
+        self.reset_matrix()?;
+
+        // Restore previous stimulation if it was active
+        if was_active {
+            if let Some(protocol) = self.active_protocol.clone() {
+                self.configure_electrodes(&protocol)?;
+                let _ = self.enable.set_high();
+            }
+        }
+
         Ok(ImpedanceMeasurement {
-            impedance_kohm: 5, // Placeholder
+            impedance_kohm,
             electrode,
-            quality: 90,
+            quality: adjusted_quality,
         })
+    }
+
+    /// Find a suitable ground electrode for impedance measurement.
+    ///
+    /// Returns an electrode index that is far from the target electrode
+    /// and in a known-good position.
+    fn find_ground_electrode(&self, target: u8) -> u8 {
+        // Choose electrode on opposite side of matrix
+        let target_row = target / 8;
+        let target_col = target % 8;
+
+        // Pick electrode in opposite quadrant
+        let ground_row = if target_row < 4 { 6 } else { 1 };
+        let ground_col = if target_col < 4 { 6 } else { 1 };
+
+        ground_row * 8 + ground_col
+    }
+
+    /// Measure impedance for all active electrodes.
+    ///
+    /// Returns measurements for all electrodes that are currently in use.
+    pub fn measure_all_impedances(&mut self) -> Result<Vec<ImpedanceMeasurement, 16>, StimError> {
+        let mut measurements = Vec::new();
+
+        // Find all electrodes that need to be measured
+        let electrodes_to_measure: Vec<u8, 16> = self.electrode_states
+            .iter()
+            .enumerate()
+            .filter(|(_, &state)| state == ElectrodeState::Anode || state == ElectrodeState::Cathode)
+            .map(|(idx, _)| idx as u8)
+            .collect();
+
+        for electrode in electrodes_to_measure {
+            match self.measure_impedance(electrode) {
+                Ok(m) => { let _ = measurements.push(m); }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Ok(measurements)
+    }
+
+    /// Check if all electrode impedances are within acceptable range.
+    ///
+    /// # Arguments
+    /// * `min_kohm` - Minimum acceptable impedance (below suggests short)
+    /// * `max_kohm` - Maximum acceptable impedance (above suggests poor contact)
+    /// * `min_quality` - Minimum quality score (0-100)
+    pub fn validate_impedances(
+        &mut self,
+        min_kohm: u16,
+        max_kohm: u16,
+        min_quality: u8,
+    ) -> Result<bool, StimError> {
+        let measurements = self.measure_all_impedances()?;
+
+        for m in measurements {
+            if m.impedance_kohm < min_kohm || m.impedance_kohm > max_kohm {
+                return Ok(false);
+            }
+            if m.quality < min_quality {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     /// Stop stimulation gracefully

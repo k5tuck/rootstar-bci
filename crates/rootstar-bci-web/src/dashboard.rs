@@ -653,7 +653,7 @@ impl MultiDeviceDashboard {
         Ok(())
     }
 
-    /// Render overlay comparison view.
+    /// Render overlay comparison view with alpha-blended timeseries.
     fn render_overlay_view(&self, width: f64, height: f64) -> Result<(), JsValue> {
         let ctx = &self.main_ctx;
 
@@ -662,50 +662,151 @@ impl MultiDeviceDashboard {
         ctx.set_font("18px sans-serif");
         ctx.fill_text("Multi-Device Overlay", 20.0, 30.0)?;
 
-        // For each device, render timeseries with device color
+        // Get devices to overlay
         let devices: Vec<&str> = if !self.selected_devices.is_empty() {
             self.selected_devices.iter().map(|s| s.as_str()).collect()
         } else {
             self.device_order.iter().map(|s| s.as_str()).collect()
         };
 
-        // Render each device's timeseries
+        // Plot area
+        let plot_x = 60.0;
         let plot_y = 60.0;
+        let plot_width = width - 220.0;
         let plot_height = height - 100.0;
 
+        // Draw plot background and grid
+        ctx.set_fill_style(&"#0d0d1a".into());
+        ctx.fill_rect(plot_x, plot_y, plot_width, plot_height);
+
+        // Draw horizontal grid lines
+        ctx.set_stroke_style(&"#1a1a2e".into());
+        ctx.set_line_width(1.0);
+        for i in 0..=4 {
+            let y = plot_y + (i as f64) * plot_height / 4.0;
+            ctx.begin_path();
+            ctx.move_to(plot_x, y);
+            ctx.line_to(plot_x + plot_width, y);
+            ctx.stroke();
+        }
+
+        // Draw vertical grid lines (time markers)
+        for i in 0..=10 {
+            let x = plot_x + (i as f64) * plot_width / 10.0;
+            ctx.begin_path();
+            ctx.move_to(x, plot_y);
+            ctx.line_to(x, plot_y + plot_height);
+            ctx.stroke();
+        }
+
+        // Draw axis labels
+        ctx.set_fill_style(&"#666666".into());
+        ctx.set_font("10px sans-serif");
+
+        // Y-axis labels (amplitude)
+        for i in 0..=4 {
+            let y = plot_y + (i as f64) * plot_height / 4.0;
+            let label = format!("{}", 100 - i * 50);
+            ctx.fill_text(&label, plot_x - 30.0, y + 4.0)?;
+        }
+        ctx.save();
+        ctx.translate(15.0, plot_y + plot_height / 2.0)?;
+        ctx.rotate(-std::f64::consts::FRAC_PI_2)?;
+        ctx.set_text_align("center");
+        ctx.fill_text("Amplitude (µV)", 0.0, 0.0)?;
+        ctx.restore();
+        ctx.set_text_align("left");
+
+        // X-axis label
+        ctx.set_text_align("center");
+        ctx.fill_text("Time (s)", plot_x + plot_width / 2.0, height - 10.0)?;
+        ctx.set_text_align("left");
+
+        // Calculate alpha for each device (more devices = more transparency)
+        let alpha = (0.8 / devices.len().max(1) as f64).max(0.3);
+
+        // Render each device's timeseries with its color and alpha blending
         for (i, device_id) in devices.iter().enumerate() {
             if let Some(renderers) = self.device_renderers.get(*device_id) {
-                // Render timeseries
-                let _ = renderers.timeseries.render();
-
-                // For now just show a placeholder
-                // In production, we'd composite the timeseries with alpha blending
                 if let Some(device) = self.devices.get(*device_id) {
+                    // Get the timeseries canvas
+                    let ts_canvas = renderers.timeseries.canvas();
+
+                    // Set global alpha for blending
+                    ctx.set_global_alpha(alpha);
+
+                    // Draw the timeseries canvas onto the plot area
+                    ctx.draw_image_with_html_canvas_element_and_sw_and_sh_and_dx_and_dy_and_dw_and_dh(
+                        &ts_canvas,
+                        0.0,
+                        0.0,
+                        ts_canvas.width() as f64,
+                        ts_canvas.height() as f64,
+                        plot_x,
+                        plot_y,
+                        plot_width,
+                        plot_height,
+                    )?;
+
+                    // Draw colored overlay tint
+                    let [r, g, b] = device.color;
+                    let color_str = format!("rgba({}, {}, {}, 0.15)", r, g, b);
+                    ctx.set_fill_style(&color_str.into());
+                    ctx.fill_rect(plot_x, plot_y, plot_width, plot_height);
+
+                    // Reset alpha
+                    ctx.set_global_alpha(1.0);
+
                     // Legend entry
-                    let legend_y = plot_y + 20.0 + (i as f64) * 20.0;
+                    let legend_x = width - 150.0;
+                    let legend_y = plot_y + 20.0 + (i as f64) * 25.0;
+
+                    // Color box
                     ctx.set_fill_style(&device.css_color().into());
-                    ctx.fill_rect(width - 150.0, legend_y - 10.0, 15.0, 15.0);
+                    ctx.fill_rect(legend_x, legend_y - 10.0, 15.0, 15.0);
+
+                    // Device name
                     ctx.set_fill_style(&"#ffffff".into());
                     ctx.set_font("12px sans-serif");
-                    ctx.fill_text(&device.name, width - 130.0, legend_y)?;
+                    ctx.fill_text(&device.name, legend_x + 20.0, legend_y)?;
+
+                    // Signal quality indicator
+                    let quality_color = if device.signal_quality >= 80 {
+                        "#00cc66"
+                    } else if device.signal_quality >= 50 {
+                        "#cccc00"
+                    } else {
+                        "#cc6600"
+                    };
+                    ctx.set_fill_style(&quality_color.into());
+                    ctx.set_font("10px sans-serif");
+                    ctx.fill_text(
+                        &format!("{}%", device.signal_quality),
+                        legend_x + 80.0,
+                        legend_y,
+                    )?;
                 }
             }
         }
 
-        // Placeholder for actual overlay
+        // Draw plot border
         ctx.set_stroke_style(&"#444444".into());
         ctx.set_line_width(1.0);
-        ctx.stroke_rect(20.0, plot_y, width - 180.0, plot_height);
+        ctx.stroke_rect(plot_x, plot_y, plot_width, plot_height);
 
-        ctx.set_fill_style(&"#666666".into());
-        ctx.set_font("14px sans-serif");
-        ctx.set_text_align("center");
-        ctx.fill_text(
-            "Overlay view: Multiple device signals superimposed",
-            (width - 80.0) / 2.0,
-            plot_y + plot_height / 2.0,
-        )?;
-        ctx.set_text_align("left");
+        // Legend box
+        let legend_box_x = width - 160.0;
+        let legend_box_y = plot_y;
+        let legend_box_h = 30.0 + devices.len() as f64 * 25.0;
+        ctx.set_fill_style(&"#16162a".into());
+        ctx.fill_rect(legend_box_x, legend_box_y, 155.0, legend_box_h);
+        ctx.set_stroke_style(&"#333333".into());
+        ctx.stroke_rect(legend_box_x, legend_box_y, 155.0, legend_box_h);
+
+        // Legend title
+        ctx.set_fill_style(&"#888888".into());
+        ctx.set_font("11px sans-serif");
+        ctx.fill_text("Devices", legend_box_x + 10.0, legend_box_y + 15.0)?;
 
         Ok(())
     }

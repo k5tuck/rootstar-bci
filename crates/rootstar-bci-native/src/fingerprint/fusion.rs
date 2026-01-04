@@ -130,9 +130,7 @@ impl TemporalAligner {
         };
 
         // Compute neurovascular coupling
-        let n_channels = fnirs.n_channels;
-        let nv_coupling = vec![0.0; n_channels]; // Placeholder - would compute from buffers
-        let nv_lag_ms = vec![0i16; n_channels];
+        let (nv_coupling, nv_lag_ms) = self.compute_nv_coupling(timestamp_us, &fnirs);
 
         Some(AlignedData {
             timestamp_us,
@@ -141,6 +139,91 @@ impl TemporalAligner {
             nv_coupling,
             nv_lag_ms,
         })
+    }
+
+    /// Compute neurovascular coupling between EEG and fNIRS.
+    ///
+    /// NV coupling measures the correlation between neural activity (EEG band power)
+    /// and hemodynamic response (fNIRS HbO2) at different time lags.
+    ///
+    /// Returns (coupling_strength, optimal_lag_ms) for each fNIRS channel.
+    fn compute_nv_coupling(&self, timestamp_us: u64, fnirs: &FnirsFeatures) -> (Vec<f64>, Vec<i16>) {
+        let n_channels = fnirs.n_channels;
+        let mut coupling = vec![0.0; n_channels];
+        let mut lags = vec![0i16; n_channels];
+
+        // Need sufficient data in buffers
+        if self.eeg_buffer.len() < 10 || self.fnirs_buffer.len() < 5 {
+            return (coupling, lags);
+        }
+
+        // Hemodynamic response typically peaks 4-6 seconds after neural activity
+        // We search for the optimal lag in the range specified by config
+        let lag_min_us = (self.config.hrf_lag_range.0 * 1_000_000.0) as i64;
+        let lag_max_us = (self.config.hrf_lag_range.1 * 1_000_000.0) as i64;
+        let lag_step_us = 500_000i64; // 500ms steps
+
+        for ch in 0..n_channels {
+            let mut best_corr = 0.0f64;
+            let mut best_lag = 0i64;
+
+            // Get fNIRS HbO2 time series for this channel
+            let fnirs_series: Vec<(u64, f64)> = self
+                .fnirs_buffer
+                .iter()
+                .filter(|(_, f)| ch < f.hbo_activation.len())
+                .map(|(t, f)| (*t, f.hbo_activation[ch]))
+                .collect();
+
+            if fnirs_series.len() < 3 {
+                continue;
+            }
+
+            // Try different lags
+            let mut lag = lag_min_us;
+            while lag <= lag_max_us {
+                // Get EEG band power at lagged timestamps
+                let mut eeg_values = Vec::new();
+                let mut fnirs_values = Vec::new();
+
+                for (fnirs_t, fnirs_val) in &fnirs_series {
+                    let eeg_t = (*fnirs_t as i64 - lag) as u64;
+
+                    // Find nearest EEG sample at lagged time
+                    if let Some((_, eeg_feat)) = self
+                        .eeg_buffer
+                        .iter()
+                        .min_by_key(|(t, _)| (*t as i64 - eeg_t as i64).abs())
+                    {
+                        // Use total band power as neural activity measure
+                        let total_power: f64 = eeg_feat
+                            .band_power
+                            .iter()
+                            .flatten()
+                            .sum();
+                        eeg_values.push(total_power);
+                        fnirs_values.push(*fnirs_val);
+                    }
+                }
+
+                if eeg_values.len() >= 3 {
+                    // Compute Pearson correlation
+                    let corr = pearson_correlation(&eeg_values, &fnirs_values);
+
+                    if corr.abs() > best_corr.abs() {
+                        best_corr = corr;
+                        best_lag = lag;
+                    }
+                }
+
+                lag += lag_step_us;
+            }
+
+            coupling[ch] = best_corr;
+            lags[ch] = (best_lag / 1000) as i16; // Convert to milliseconds
+        }
+
+        (coupling, lags)
     }
 }
 
@@ -455,6 +538,51 @@ impl Default for FingerprintFusion {
 }
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Compute Pearson correlation coefficient between two vectors.
+///
+/// Returns a value in range [-1, 1] where:
+/// - 1 indicates perfect positive correlation
+/// - 0 indicates no correlation
+/// - -1 indicates perfect negative correlation
+fn pearson_correlation(x: &[f64], y: &[f64]) -> f64 {
+    if x.len() != y.len() || x.len() < 2 {
+        return 0.0;
+    }
+
+    let n = x.len() as f64;
+
+    // Compute means
+    let mean_x: f64 = x.iter().sum::<f64>() / n;
+    let mean_y: f64 = y.iter().sum::<f64>() / n;
+
+    // Compute covariance and standard deviations
+    let mut cov = 0.0;
+    let mut var_x = 0.0;
+    let mut var_y = 0.0;
+
+    for (xi, yi) in x.iter().zip(y.iter()) {
+        let dx = xi - mean_x;
+        let dy = yi - mean_y;
+        cov += dx * dy;
+        var_x += dx * dx;
+        var_y += dy * dy;
+    }
+
+    // Avoid division by zero
+    let std_x = var_x.sqrt();
+    let std_y = var_y.sqrt();
+
+    if std_x < 1e-10 || std_y < 1e-10 {
+        return 0.0;
+    }
+
+    cov / (std_x * std_y)
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -555,5 +683,73 @@ mod tests {
         // Get aligned at a middle timestamp
         let aligned = aligner.get_aligned(100_000);
         assert!(aligned.is_some());
+    }
+
+    #[test]
+    fn test_pearson_correlation() {
+        // Perfect positive correlation
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = vec![2.0, 4.0, 6.0, 8.0, 10.0];
+        let corr = pearson_correlation(&x, &y);
+        assert!((corr - 1.0).abs() < 1e-10, "Expected 1.0, got {corr}");
+
+        // Perfect negative correlation
+        let y_neg = vec![10.0, 8.0, 6.0, 4.0, 2.0];
+        let corr_neg = pearson_correlation(&x, &y_neg);
+        assert!((corr_neg - (-1.0)).abs() < 1e-10, "Expected -1.0, got {corr_neg}");
+
+        // No correlation (constant values)
+        let y_const = vec![5.0, 5.0, 5.0, 5.0, 5.0];
+        let corr_none = pearson_correlation(&x, &y_const);
+        assert!(corr_none.abs() < 1e-10, "Expected 0.0, got {corr_none}");
+
+        // Partial correlation
+        let y_partial = vec![1.0, 3.0, 2.0, 5.0, 4.0];
+        let corr_partial = pearson_correlation(&x, &y_partial);
+        assert!(corr_partial > 0.5 && corr_partial < 1.0, "Expected moderate positive, got {corr_partial}");
+
+        // Edge cases
+        assert_eq!(pearson_correlation(&[], &[]), 0.0);
+        assert_eq!(pearson_correlation(&[1.0], &[2.0]), 0.0);
+        assert_eq!(pearson_correlation(&[1.0, 2.0], &[1.0]), 0.0); // Mismatched lengths
+    }
+
+    #[test]
+    fn test_nv_coupling_computation() {
+        let config = FusionConfig::default();
+        let mut aligner = TemporalAligner::new(config);
+
+        // Add EEG data spanning several seconds
+        for i in 0..500 {
+            let ts = i * 2000; // 2ms intervals = 500Hz
+            let mut eeg = create_test_eeg_features();
+            // Add temporal variation to create correlation
+            let time_factor = (i as f64 * 0.01).sin();
+            for ch in 0..8 {
+                for band in 0..FrequencyBand::COUNT {
+                    eeg.band_power[ch][band] *= 1.0 + time_factor;
+                }
+            }
+            aligner.add_eeg(ts, eeg);
+        }
+
+        // Add fNIRS data at lower rate with lagged response
+        for i in 0..25 {
+            let ts = i * 40000; // 40ms intervals = 25Hz
+            let mut fnirs = create_test_fnirs_features();
+            // Lag the fNIRS response by ~5 seconds (typical HRF peak)
+            let lagged_time = (i as f64 * 0.04 - 5.0).max(0.0);
+            let time_factor = (lagged_time * 5.0).sin();
+            for ch in 0..4 {
+                fnirs.hbo_activation[ch] *= 1.0 + time_factor;
+            }
+            aligner.add_fnirs(ts, fnirs);
+        }
+
+        // Get aligned data and check NV coupling was computed
+        if let Some(aligned) = aligner.get_aligned(500_000) {
+            assert_eq!(aligned.nv_coupling.len(), 4);
+            assert_eq!(aligned.nv_lag_ms.len(), 4);
+        }
     }
 }
