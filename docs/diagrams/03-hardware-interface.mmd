@@ -1,0 +1,97 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4a90d9', 'primaryTextColor': '#fff', 'primaryBorderColor': '#2d5a87', 'lineColor': '#5a5a5a'}}}%%
+flowchart TB
+    subgraph MCU["<b>ESP32-WROOM-DA</b>"]
+        Core0["Core 0<br/>(Acquisition)"]
+        Core1["Core 1<br/>(BLE/Comms)"]
+        GPIO["GPIO Controller"]
+        SPIM["SPI Master"]
+        I2CM["I2C Master"]
+        PWMC["PWM Controller"]
+        DACC["DAC Controller"]
+    end
+
+    subgraph EEG["<b>EEG Subsystem</b><br/>TI ADS1299"]
+        ADS["ADS1299<br/>24-bit, 8ch ADC"]
+        EEGElec["Ag/AgCl Electrodes<br/>(Fp1,Fp2,F3,F4,C3,C4,O1,O2)"]
+        DRL["Bias Drive (DRL)"]
+    end
+
+    subgraph FNIRS["<b>fNIRS Subsystem</b>"]
+        ADS1115["ADS1115<br/>16-bit ADC"]
+        LED760["760nm LEDs<br/>(HbR sensitive)"]
+        LED850["850nm LEDs<br/>(HbO2 sensitive)"]
+        OPT101["OPT101<br/>Photodetectors"]
+    end
+
+    subgraph STIM["<b>Stimulation Subsystem</b>"]
+        DAC8564["DAC8564<br/>16-bit DAC"]
+        Howland["Howland<br/>Current Source"]
+        StimElec["Stim Electrodes<br/>(Anode/Cathode)"]
+    end
+
+    subgraph EMO["<b>Emotional Sensing</b>"]
+        EMGSens["EMG Sensors<br/>(Facial)"]
+        EDASens["EDA Sensors<br/>(Skin Conductance)"]
+    end
+
+    subgraph Comm["<b>Communication</b>"]
+        BLE["BLE 5.0 Radio<br/>(2M PHY)"]
+        UART["USB/UART<br/>(FTDI)"]
+    end
+
+    %% SPI Bus (ADS1299)
+    SPIM -- "MOSI (23)" --> ADS
+    ADS -- "MISO (19)" --> SPIM
+    SPIM -- "SCLK (18)" --> ADS
+    GPIO -- "CS (5)" --> ADS
+    ADS -- "DRDY (4)" --> GPIO
+
+    EEGElec --> ADS
+    ADS --> DRL
+    DRL --> EEGElec
+
+    %% I2C Bus (ADS1115)
+    I2CM -- "SDA (21)" --> ADS1115
+    I2CM -- "SCL (22)" --> ADS1115
+    OPT101 --> ADS1115
+
+    %% PWM (LEDs)
+    PWMC -- "GPIO 25" --> LED760
+    PWMC -- "GPIO 26" --> LED760
+    PWMC -- "GPIO 27" --> LED850
+
+    LED760 -.-> OPT101
+    LED850 -.-> OPT101
+
+    %% DAC (Stimulation)
+    DACC -- "GPIO 32" --> DAC8564
+    DACC -- "GPIO 33" --> DAC8564
+    DAC8564 --> Howland
+    Howland --> StimElec
+
+    %% Emotional
+    EMGSens --> GPIO
+    EDASens --> GPIO
+
+    %% Communication
+    Core1 --> BLE
+    Core1 --> UART
+
+    %% Core assignments
+    Core0 --> SPIM
+    Core0 --> I2CM
+    Core0 --> PWMC
+
+    classDef mcu fill:#3498db,stroke:#2980b9,color:#fff
+    classDef eeg fill:#2ecc71,stroke:#27ae60,color:#fff
+    classDef fnirs fill:#e74c3c,stroke:#c0392b,color:#fff
+    classDef stim fill:#9b59b6,stroke:#8e44ad,color:#fff
+    classDef emo fill:#f39c12,stroke:#d35400,color:#fff
+    classDef comm fill:#1abc9c,stroke:#16a085,color:#fff
+
+    class MCU mcu
+    class EEG eeg
+    class FNIRS fnirs
+    class STIM stim
+    class EMO emo
+    class Comm comm

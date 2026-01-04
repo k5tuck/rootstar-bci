@@ -1,0 +1,99 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4a90d9', 'primaryTextColor': '#fff', 'primaryBorderColor': '#2d5a87', 'lineColor': '#5a5a5a', 'secondaryColor': '#6c5ce7', 'tertiaryColor': '#00cec9', 'background': '#ffffff'}}}%%
+flowchart TB
+    subgraph Tier3["<b>Tier 3: Web (WASM)</b><br/>rootstar-bci-web"]
+        direction LR
+        WebViz["2D Visualization<br/>(Timeseries, Topomap)"]
+        SNSViz["3D SNS Visualization<br/>(WebGPU Meshes)"]
+        StimControl["Stim Control Panel"]
+    end
+
+    subgraph Tier2["<b>Tier 2: Native Host</b><br/>rootstar-bci-native"]
+        direction TB
+        subgraph Bridge["Bridge Layer"]
+            DevMgr["Device Manager"]
+            USB["USB/Serial"]
+            BLE["Bluetooth LE"]
+        end
+        subgraph Processing["Processing"]
+            Filters["Filters & FFT"]
+            Fusion["EEG+fNIRS Fusion"]
+            Hyper["Hyperscanning"]
+        end
+        subgraph Features["Features"]
+            ML["ML Features"]
+            FP["Fingerprinting"]
+            SNSDec["SNS Decoder"]
+        end
+        subgraph Streaming["External Streaming"]
+            LSL["LSL Outlet"]
+            OSC["OSC Sender"]
+            BrainFlow["BrainFlow"]
+        end
+        NativeViz["Native Viz<br/>(egui/wgpu)"]
+    end
+
+    subgraph Tier1["<b>Tier 1: Embedded</b><br/>rootstar-bci-embedded"]
+        direction LR
+        subgraph Drivers["Hardware Drivers"]
+            ADS1299["ADS1299<br/>(EEG)"]
+            FNIRS["ADS1115<br/>(fNIRS)"]
+            EMGDrv["EMG Driver"]
+            EDADrv["EDA Driver"]
+            Stim["Stim Driver<br/>(DAC8564)"]
+        end
+        BLEServ["BLE GATT Server"]
+        ESP32["ESP32-WROOM-DA"]
+    end
+
+    subgraph Tier0["<b>Tier 0: Core</b><br/>rootstar-bci-core (no_std)"]
+        direction LR
+        Types["Core Types<br/>(Fixed24.8, Samples)"]
+        Proto["Protocol<br/>(Packets, CRC)"]
+        Math["Math<br/>(Filters, Beer-Lambert)"]
+        SNSCore["SNS Encoding<br/>(All Modalities)"]
+        Safety["Safety Limits"]
+    end
+
+    subgraph Physics["<b>Physics Engine</b><br/>VR/XR Integration"]
+        PhysCore["Physics Core"]
+        PhysMesh["3D Meshes"]
+        PhysBridge["BCI Bridge"]
+    end
+
+    %% Connections
+    Tier0 --> Tier1
+    Tier0 --> Tier2
+    Tier0 --> Tier3
+
+    ESP32 --> ADS1299
+    ESP32 --> FNIRS
+    ESP32 --> EMGDrv
+    ESP32 --> EDADrv
+    ESP32 --> Stim
+    ESP32 --> BLEServ
+
+    BLEServ --> BLE
+    USB --> DevMgr
+    BLE --> DevMgr
+
+    DevMgr --> Processing
+    Processing --> Features
+    Processing --> Streaming
+    Features --> NativeViz
+
+    DevMgr --> Tier3
+
+    Physics --> Tier2
+    Physics --> Tier3
+
+    classDef tier0 fill:#2ecc71,stroke:#27ae60,color:#fff
+    classDef tier1 fill:#e74c3c,stroke:#c0392b,color:#fff
+    classDef tier2 fill:#3498db,stroke:#2980b9,color:#fff
+    classDef tier3 fill:#9b59b6,stroke:#8e44ad,color:#fff
+    classDef physics fill:#f39c12,stroke:#d35400,color:#fff
+
+    class Tier0 tier0
+    class Tier1 tier1
+    class Tier2 tier2
+    class Tier3 tier3
+    class Physics physics

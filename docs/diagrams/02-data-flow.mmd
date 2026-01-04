@@ -1,0 +1,127 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#4a90d9', 'primaryTextColor': '#fff', 'primaryBorderColor': '#2d5a87', 'lineColor': '#5a5a5a'}}}%%
+flowchart TB
+    subgraph Hardware["<b>Hardware Layer (ESP32)</b>"]
+        EEG["EEG Sensor<br/>(ADS1299 8ch)"]
+        FNIRS["fNIRS Sensor<br/>(ADS1115 + LEDs)"]
+        EMG["EMG Sensor"]
+        EDA["EDA Sensor"]
+    end
+
+    subgraph Acquisition["<b>Data Acquisition</b>"]
+        SPI["SPI Interface"]
+        I2C["I2C Interface"]
+        ADC["ADC Sampling"]
+    end
+
+    subgraph Packet["<b>Packet Formation</b>"]
+        Serialize["Serialize<br/>(postcard)"]
+        Timestamp["Add Timestamp"]
+        CRC["CRC Checksum"]
+    end
+
+    subgraph Transport["<b>Transport Layer</b>"]
+        UART["USB/Serial"]
+        BLE["BLE Notify"]
+    end
+
+    subgraph HostBridge["<b>Host Bridge</b>"]
+        DevMgr["DeviceManager<br/>next_event()"]
+        Parse["Parse Packets"]
+        Buffer["Ring Buffers"]
+    end
+
+    subgraph Processing["<b>Signal Processing</b>"]
+        Filter["IIR/Biquad<br/>Filtering"]
+        FFT["FFT Spectral<br/>Analysis"]
+        BeerLambert["Beer-Lambert<br/>(fNIRS→HbO/HbR)"]
+        Fusion["EEG+fNIRS<br/>Temporal Align"]
+    end
+
+    subgraph Features["<b>Feature Extraction</b>"]
+        BandPower["Band Power<br/>(δ,θ,α,β,γ)"]
+        Coherence["Inter-brain<br/>Coherence"]
+        SNSDecode["SNS Decode<br/>(Cortex→Receptor)"]
+        FP["Neural<br/>Fingerprint"]
+    end
+
+    subgraph Output["<b>Output Layer</b>"]
+        NativeViz["Native Viz<br/>(egui)"]
+        WebViz["Web Viz<br/>(WASM)"]
+        LSL["LSL Stream"]
+        OSC["OSC Messages"]
+        StimCmd["Stim Commands"]
+    end
+
+    subgraph Feedback["<b>Feedback Loop</b>"]
+        StimCtrl["Stimulation<br/>Controller"]
+        Safety["Safety<br/>Enforcement"]
+        DAC["DAC Output"]
+    end
+
+    %% Hardware to Acquisition
+    EEG --> SPI
+    FNIRS --> I2C
+    EMG --> ADC
+    EDA --> ADC
+
+    %% Acquisition to Packet
+    SPI --> Serialize
+    I2C --> Serialize
+    ADC --> Serialize
+    Serialize --> Timestamp --> CRC
+
+    %% Packet to Transport
+    CRC --> UART
+    CRC --> BLE
+
+    %% Transport to Host
+    UART --> DevMgr
+    BLE --> DevMgr
+    DevMgr --> Parse --> Buffer
+
+    %% Host to Processing
+    Buffer --> Filter
+    Buffer --> BeerLambert
+    Filter --> FFT
+    Filter --> Fusion
+    BeerLambert --> Fusion
+
+    %% Processing to Features
+    FFT --> BandPower
+    Fusion --> Coherence
+    Fusion --> SNSDecode
+    BandPower --> FP
+
+    %% Features to Output
+    BandPower --> NativeViz
+    BandPower --> WebViz
+    SNSDecode --> WebViz
+    Coherence --> LSL
+    BandPower --> OSC
+
+    %% Feedback loop
+    FP --> StimCtrl
+    StimCtrl --> Safety
+    Safety --> StimCmd
+    StimCmd --> DAC
+    DAC -.-> Hardware
+
+    classDef hw fill:#e74c3c,stroke:#c0392b,color:#fff
+    classDef acq fill:#f39c12,stroke:#d35400,color:#fff
+    classDef packet fill:#9b59b6,stroke:#8e44ad,color:#fff
+    classDef transport fill:#1abc9c,stroke:#16a085,color:#fff
+    classDef host fill:#3498db,stroke:#2980b9,color:#fff
+    classDef proc fill:#2ecc71,stroke:#27ae60,color:#fff
+    classDef feat fill:#e67e22,stroke:#d35400,color:#fff
+    classDef out fill:#34495e,stroke:#2c3e50,color:#fff
+    classDef fb fill:#c0392b,stroke:#922b21,color:#fff
+
+    class Hardware hw
+    class Acquisition acq
+    class Packet packet
+    class Transport transport
+    class HostBridge host
+    class Processing proc
+    class Features feat
+    class Output out
+    class Feedback fb
