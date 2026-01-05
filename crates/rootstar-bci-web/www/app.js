@@ -68,22 +68,26 @@ async function init() {
     try {
         updateLoading('Initializing WebAssembly...', 10);
 
-        // Try to load the WASM module
+        // Try to load the WASM module for data generation
+        // Always use JavaScript rendering for the canvas visualizations
         try {
             updateLoading('Loading WASM module...', 30);
             wasmModule = await import('./pkg/rootstar_bci_web.js');
             await wasmModule.default();
-            updateLoading('Initializing BCI application...', 60);
-            bciApp = new wasmModule.BciApp();
+            updateLoading('Initializing demo runner...', 60);
+            // Use WASM DemoRunner for data generation if available
             demoRunner = new wasmModule.DemoRunner();
-            console.log('WASM module loaded successfully');
+            console.log('WASM DemoRunner loaded successfully');
         } catch (wasmError) {
-            console.warn('WASM not available, using JavaScript demo mode:', wasmError);
+            console.warn('WASM not available, using JavaScript demo runner:', wasmError);
             updateLoading('Using JavaScript demo mode...', 50);
-            // Use JavaScript-based demo (fallback for when WASM isn't built)
+            // Use JavaScript-based demo runner as fallback
             demoRunner = createJSDemoRunner();
-            bciApp = createJSBciApp();
         }
+
+        // Always use JavaScript BCI app for canvas visualization
+        // (WASM BciApp uses internal canvases that don't match our HTML)
+        bciApp = createJSBciApp();
 
         updateLoading('Setting up visualizations...', 80);
         setupCanvases();
@@ -853,14 +857,17 @@ function startDemo() {
     isRunning = true;
     btnPlay.textContent = '⏸ Pause';
 
-    if (demoRunner.start) {
-        demoRunner.start();
-    } else {
+    // Call start method on demo runner
+    callDemoMethod('start');
+    // Also set running flag directly for JS fallback
+    if ('running' in demoRunner) {
         demoRunner.running = true;
     }
 
     lastFrameTime = performance.now();
+    fpsUpdateTime = performance.now();
     animationId = requestAnimationFrame(renderLoop);
+    console.log('Demo started');
 }
 
 /**
@@ -870,9 +877,10 @@ function stopDemo() {
     isRunning = false;
     btnPlay.textContent = '▶ Start';
 
-    if (demoRunner.stop) {
-        demoRunner.stop();
-    } else {
+    // Call stop method on demo runner
+    callDemoMethod('stop');
+    // Also set running flag directly for JS fallback
+    if ('running' in demoRunner) {
         demoRunner.running = false;
     }
 
@@ -880,6 +888,7 @@ function stopDemo() {
         cancelAnimationFrame(animationId);
         animationId = null;
     }
+    console.log('Demo stopped');
 }
 
 /**
@@ -911,6 +920,32 @@ function resetDemo() {
 }
 
 /**
+ * Wrapper to call demo runner methods (handles both WASM and JS versions)
+ */
+function callDemoMethod(methodName, ...args) {
+    // WASM uses snake_case, JS uses the same
+    const method = demoRunner[methodName];
+    if (typeof method === 'function') {
+        return method.call(demoRunner, ...args);
+    }
+    // Some methods might return arrays that need conversion from WASM
+    return null;
+}
+
+/**
+ * Convert WASM array-like to JS array if needed
+ */
+function toArray(wasmResult) {
+    if (!wasmResult) return [];
+    if (Array.isArray(wasmResult)) return wasmResult;
+    // WASM might return typed arrays or array-like objects
+    if (wasmResult.length !== undefined) {
+        return Array.from(wasmResult);
+    }
+    return [];
+}
+
+/**
  * Main render loop
  */
 function renderLoop(timestamp) {
@@ -928,44 +963,59 @@ function renderLoop(timestamp) {
     }
 
     // Tick the demo runner
-    const samples = demoRunner.tick(deltaMs);
+    const samples = callDemoMethod('tick', deltaMs) || 0;
 
     // Generate and push data
-    for (let i = 0; i < samples; i++) {
-        const eeg = demoRunner.generate_eeg();
-        bciApp.push_eeg_raw(eeg);
+    for (let i = 0; i < Math.max(1, samples); i++) {
+        const eeg = toArray(callDemoMethod('generate_eeg'));
+        if (eeg.length > 0) {
+            bciApp.push_eeg_raw(eeg);
 
-        // Update stats occasionally
-        if (i === samples - 1) {
-            statFp1.textContent = `${eeg[0].toFixed(1)} µV`;
+            // Update stats occasionally
+            if (i === samples - 1 || samples === 0) {
+                statFp1.textContent = `${eeg[0].toFixed(1)} µV`;
+            }
         }
     }
 
     // Generate fNIRS data (lower rate)
-    const fnirs = demoRunner.generate_fnirs();
-    bciApp.push_fnirs_raw(fnirs.slice(0, 4), fnirs.slice(4, 8));
-    statHbo2.textContent = `${(fnirs[0] * 1000).toFixed(1)} µM`;
-    statHbr.textContent = `${(fnirs[4] * 1000).toFixed(1)} µM`;
+    const fnirs = toArray(callDemoMethod('generate_fnirs'));
+    if (fnirs.length >= 8) {
+        bciApp.push_fnirs_raw(fnirs.slice(0, 4), fnirs.slice(4, 8));
+        statHbo2.textContent = `${(fnirs[0] * 1000).toFixed(1)} µM`;
+        statHbr.textContent = `${(fnirs[4] * 1000).toFixed(1)} µM`;
+    }
 
     // Generate EMG and EDA
-    const emg = demoRunner.generate_emg();
-    const eda = demoRunner.generate_eda();
-    bciApp.push_emg_rms(emg);
-    bciApp.push_eda_raw(eda.slice(0, 4));
-    statScl.textContent = `${eda[0].toFixed(1)} µS`;
-    statArousal.textContent = demoRunner.scenarios ?
-        `${(demoRunner.scenarios[demoRunner.scenario].arousal * 100).toFixed(0)}%` : '--';
+    const emg = toArray(callDemoMethod('generate_emg'));
+    const eda = toArray(callDemoMethod('generate_eda'));
+    if (emg.length > 0) {
+        bciApp.push_emg_rms(emg);
+    }
+    if (eda.length >= 4) {
+        bciApp.push_eda_raw(eda.slice(0, 4));
+        statScl.textContent = `${eda[0].toFixed(1)} µS`;
+    }
+
+    // Get arousal from JS fallback scenarios if available
+    if (demoRunner.scenarios && demoRunner.scenario) {
+        statArousal.textContent = `${(demoRunner.scenarios[demoRunner.scenario].arousal * 100).toFixed(0)}%`;
+    } else {
+        statArousal.textContent = '--';
+    }
 
     // Update band power display
-    const bands = demoRunner.generate_band_power();
-    updateBandPower(bands);
-    statAlpha.textContent = `${(bands[2] * 100).toFixed(0)}%`;
+    const bands = toArray(callDemoMethod('generate_band_power'));
+    if (bands.length >= 5) {
+        updateBandPower(bands);
+        statAlpha.textContent = `${(bands[2] * 100).toFixed(0)}%`;
+    }
 
     // Render all visualizations
     bciApp.render();
 
     // Update time display
-    const timeMs = demoRunner.current_time_ms ? demoRunner.current_time_ms() : demoRunner.time_ms;
+    const timeMs = callDemoMethod('current_time_ms') || demoRunner.time_ms || 0;
     const mins = Math.floor(timeMs / 60000);
     const secs = Math.floor((timeMs % 60000) / 1000);
     const ms = Math.floor(timeMs % 1000);
