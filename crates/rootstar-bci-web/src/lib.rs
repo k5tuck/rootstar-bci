@@ -15,11 +15,15 @@
 
 pub mod control;
 pub mod dashboard;
+pub mod demo;
 pub mod sns_viz;
 pub mod viz;
 
 // Re-export dashboard types
 pub use dashboard::{DashboardDevice, DeviceStatus, MultiDeviceDashboard, ViewMode};
+
+// Re-export demo types for testing without hardware
+pub use demo::{DemoRunner, DemoScenario, generate_demo_fixture_json, parse_demo_fixture};
 
 use wasm_bindgen::prelude::*;
 

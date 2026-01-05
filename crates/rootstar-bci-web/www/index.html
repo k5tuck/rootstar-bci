@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rootstar BCI - Brain-Computer Interface Visualization</title>
+    <meta name="description" content="Real-time brain-computer interface visualization for EEG, fNIRS, EMG, and EDA biosignals">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+    <style>
+        :root {
+            --bg-primary: #0a0a1a;
+            --bg-secondary: #16162a;
+            --bg-tertiary: #1a1a2e;
+            --text-primary: #ffffff;
+            --text-secondary: #888888;
+            --accent-blue: #007ACC;
+            --accent-green: #00cc66;
+            --accent-orange: #ff6600;
+            --accent-red: #cc0000;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            transition: opacity 0.5s ease;
+        }
+
+        .loading-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 3px solid var(--bg-tertiary);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 20px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .loading-progress {
+            width: 200px;
+            height: 4px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .loading-progress-bar {
+            height: 100%;
+            background: var(--accent-blue);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        /* Header */
+        header {
+            background: var(--bg-secondary);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--bg-tertiary);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            font-size: 24px;
+        }
+
+        .logo-text {
+            font-weight: 600;
+            font-size: 18px;
+        }
+
+        .logo-text span {
+            color: var(--accent-blue);
+        }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        .status-dot.demo {
+            background: var(--accent-orange);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Main content */
+        main {
+            display: flex;
+            height: calc(100vh - 57px);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--bg-tertiary);
+            padding: 16px;
+            overflow-y: auto;
+        }
+
+        .sidebar-section {
+            margin-bottom: 24px;
+        }
+
+        .sidebar-section h3 {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .scenario-btn {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid transparent;
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 13px;
+            text-align: left;
+            cursor: pointer;
+            margin-bottom: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .scenario-btn:hover {
+            background: #2a2a4e;
+        }
+
+        .scenario-btn.active {
+            border-color: var(--accent-blue);
+            background: rgba(0, 122, 204, 0.15);
+        }
+
+        .scenario-btn .emoji {
+            margin-right: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .control-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            height: 4px;
+            -webkit-appearance: none;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: var(--accent-blue);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .control-value {
+            font-size: 12px;
+            color: var(--text-primary);
+            margin-top: 4px;
+        }
+
+        /* Visualization area */
+        .viz-container {
+            flex: 1;
+            padding: 16px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 16px;
+            overflow: hidden;
+        }
+
+        .viz-panel {
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            border: 1px solid var(--bg-tertiary);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .viz-panel-header {
+            padding: 10px 14px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .viz-panel-title {
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .viz-panel-status {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .viz-panel-content {
+            flex: 1;
+            position: relative;
+            padding: 8px;
+        }
+
+        .viz-panel-content canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Stats overlay */
+        .stats-overlay {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0,0,0,0.7);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-family: monospace;
+        }
+
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 4px;
+        }
+
+        .stats-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .stats-label {
+            color: var(--text-secondary);
+        }
+
+        .stats-value {
+            color: var(--text-primary);
+        }
+
+        /* Band power bars */
+        .band-bars {
+            display: flex;
+            gap: 8px;
+            padding: 12px;
+            background: var(--bg-tertiary);
+            border-radius: 6px;
+            margin-top: 8px;
+        }
+
+        .band-bar {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .band-bar-fill {
+            width: 100%;
+            height: 60px;
+            background: var(--bg-primary);
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .band-bar-value {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--accent-blue);
+            transition: height 0.1s ease;
+        }
+
+        .band-bar-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Footer controls */
+        .footer-controls {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--bg-tertiary);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .play-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0088ee;
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background: #2a2a4e;
+        }
+
+        .time-display {
+            font-family: monospace;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .demo-badge {
+            background: var(--accent-orange);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .sidebar {
+                width: 240px;
+            }
+        }
+
+        @media (max-width: 900px) {
+            main {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                max-height: 200px;
+            }
+            .viz-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading screen -->
+    <div class="loading-screen" id="loading">
+        <div class="loading-spinner"></div>
+        <div class="loading-text" id="loading-text">Loading WASM module...</div>
+        <div class="loading-progress">
+            <div class="loading-progress-bar" id="loading-progress"></div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header>
+        <div class="logo">
+            <span class="logo-icon">🧠</span>
+            <span class="logo-text">Rootstar <span>BCI</span></span>
+        </div>
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-dot demo"></span>
+                <span>Demo Mode</span>
+            </div>
+            <div class="status-item">
+                <span id="sample-rate">250 Hz</span>
+            </div>
+            <div class="status-item">
+                <span id="fps">-- FPS</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main content -->
+    <main>
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-section">
+                <h3>Demo Scenarios</h3>
+                <button class="scenario-btn active" data-scenario="Relaxed">
+                    <span class="emoji">😌</span> Relaxed (Eyes Closed)
+                </button>
+                <button class="scenario-btn" data-scenario="Focused">
+                    <span class="emoji">🎯</span> Focused Attention
+                </button>
+                <button class="scenario-btn" data-scenario="Drowsy">
+                    <span class="emoji">😴</span> Drowsy State
+                </button>
+                <button class="scenario-btn" data-scenario="Thinking">
+                    <span class="emoji">🤔</span> Active Thinking
+                </button>
+                <button class="scenario-btn" data-scenario="Meditation">
+                    <span class="emoji">🧘</span> Meditation
+                </button>
+                <button class="scenario-btn" data-scenario="MotorImagery">
+                    <span class="emoji">🖐️</span> Motor Imagery
+                </button>
+                <button class="scenario-btn" data-scenario="EmotionalResponse">
+                    <span class="emoji">😊</span> Emotional Response
+                </button>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Signal Settings</h3>
+                <div class="control-group">
+                    <label>Noise Level</label>
+                    <input type="range" id="noise-level" min="0" max="100" value="15">
+                    <div class="control-value"><span id="noise-value">15</span>%</div>
+                </div>
+                <div class="control-group">
+                    <label>Time Window</label>
+                    <input type="range" id="time-window" min="2" max="30" value="10">
+                    <div class="control-value"><span id="time-value">10</span>s</div>
+                </div>
+                <div class="control-group">
+                    <label>Amplitude Scale</label>
+                    <input type="range" id="amplitude-scale" min="25" max="200" value="100">
+                    <div class="control-value"><span id="amplitude-value">100</span> µV/div</div>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Band Power</h3>
+                <div class="band-bars">
+                    <div class="band-bar">
+                        <div class="band-bar-fill">
+                            <div class="band-bar-value" id="band-delta" style="height: 25%"></div>
+                        </div>
+                        <span class="band-bar-label">δ</span>
+                    </div>
+                    <div class="band-bar">
+                        <div class="band-bar-fill">
+                            <div class="band-bar-value" id="band-theta" style="height: 18%"></div>
+                        </div>
+                        <span class="band-bar-label">θ</span>
+                    </div>
+                    <div class="band-bar">
+                        <div class="band-bar-fill">
+                            <div class="band-bar-value" id="band-alpha" style="height: 35%; background: #00cc66"></div>
+                        </div>
+                        <span class="band-bar-label">α</span>
+                    </div>
+                    <div class="band-bar">
+                        <div class="band-bar-fill">
+                            <div class="band-bar-value" id="band-beta" style="height: 15%"></div>
+                        </div>
+                        <span class="band-bar-label">β</span>
+                    </div>
+                    <div class="band-bar">
+                        <div class="band-bar-fill">
+                            <div class="band-bar-value" id="band-gamma" style="height: 7%"></div>
+                        </div>
+                        <span class="band-bar-label">γ</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Visualization panels -->
+        <div class="viz-container">
+            <div class="viz-panel">
+                <div class="viz-panel-header">
+                    <span class="viz-panel-title">EEG Timeseries</span>
+                    <span class="viz-panel-status">8 channels</span>
+                </div>
+                <div class="viz-panel-content">
+                    <canvas id="canvas-eeg"></canvas>
+                    <div class="stats-overlay">
+                        <div class="stats-row">
+                            <span class="stats-label">Fp1:</span>
+                            <span class="stats-value" id="stat-fp1">--</span>
+                        </div>
+                        <div class="stats-row">
+                            <span class="stats-label">Alpha:</span>
+                            <span class="stats-value" id="stat-alpha">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="viz-panel">
+                <div class="viz-panel-header">
+                    <span class="viz-panel-title">Topographic Map</span>
+                    <span class="viz-panel-status">10-20 System</span>
+                </div>
+                <div class="viz-panel-content">
+                    <canvas id="canvas-topomap"></canvas>
+                </div>
+            </div>
+
+            <div class="viz-panel">
+                <div class="viz-panel-header">
+                    <span class="viz-panel-title">fNIRS Heatmap</span>
+                    <span class="viz-panel-status">4 optodes</span>
+                </div>
+                <div class="viz-panel-content">
+                    <canvas id="canvas-fnirs"></canvas>
+                    <div class="stats-overlay">
+                        <div class="stats-row">
+                            <span class="stats-label">HbO2:</span>
+                            <span class="stats-value" id="stat-hbo2">--</span>
+                        </div>
+                        <div class="stats-row">
+                            <span class="stats-label">HbR:</span>
+                            <span class="stats-value" id="stat-hbr">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="viz-panel">
+                <div class="viz-panel-header">
+                    <span class="viz-panel-title">EMG + EDA</span>
+                    <span class="viz-panel-status">Facial muscles</span>
+                </div>
+                <div class="viz-panel-content">
+                    <canvas id="canvas-emg"></canvas>
+                    <div class="stats-overlay">
+                        <div class="stats-row">
+                            <span class="stats-label">SCL:</span>
+                            <span class="stats-value" id="stat-scl">--</span>
+                        </div>
+                        <div class="stats-row">
+                            <span class="stats-label">Arousal:</span>
+                            <span class="stats-value" id="stat-arousal">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer controls -->
+    <div class="footer-controls">
+        <div class="play-controls">
+            <button class="btn btn-primary" id="btn-play">▶ Start</button>
+            <button class="btn btn-secondary" id="btn-reset">↺ Reset</button>
+            <span class="time-display" id="time-display">00:00.000</span>
+        </div>
+        <span class="demo-badge">Demo Mode - No Hardware Required</span>
+    </div>
+
+    <!-- Main application script -->
+    <script type="module" src="./app.js"></script>
+</body>
+</html>
