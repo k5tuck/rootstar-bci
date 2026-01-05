@@ -1,13 +1,265 @@
 //! SNS-Specific Feature Extraction
 //!
 //! Extract features from EEG/fNIRS for sensory decoding.
+//! Implements FFT-based spectral analysis for band power extraction.
 
+use std::f64::consts::PI;
+use std::sync::Arc;
+
+use rustfft::{num_complex::Complex, Fft, FftPlanner};
 use serde::{Deserialize, Serialize};
 
 use rootstar_bci_core::types::{EegChannel, EegSample, FnirsChannel, HemodynamicSample};
 
 use super::cortical_map::{AepComponents, GepComponents, SepComponents};
 use super::error::{DecoderError, DecoderResult};
+
+// ============================================================================
+// Spectral Analyzer (FFT-based)
+// ============================================================================
+
+/// FFT-based spectral analyzer for EEG band power extraction.
+///
+/// Uses Welch's method with overlapping windows for robust power spectral
+/// density estimation.
+#[derive(Clone)]
+pub struct SpectralAnalyzer {
+    /// Sample rate in Hz
+    sample_rate_hz: f64,
+    /// FFT size (must be power of 2)
+    fft_size: usize,
+    /// Forward FFT instance
+    fft: Arc<dyn Fft<f64>>,
+    /// Hanning window coefficients
+    window: Vec<f64>,
+    /// Window normalization factor
+    window_power: f64,
+}
+
+impl SpectralAnalyzer {
+    /// Create a new spectral analyzer.
+    ///
+    /// # Arguments
+    /// * `sample_rate_hz` - Sampling rate in Hz
+    /// * `fft_size` - FFT size (will be rounded up to power of 2)
+    #[must_use]
+    pub fn new(sample_rate_hz: f64, fft_size: usize) -> Self {
+        // Round up to power of 2
+        let fft_size = fft_size.next_power_of_two();
+
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_forward(fft_size);
+
+        // Create Hanning window
+        let window: Vec<f64> = (0..fft_size)
+            .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f64 / (fft_size - 1) as f64).cos()))
+            .collect();
+
+        // Calculate window power for normalization
+        let window_power: f64 = window.iter().map(|w| w * w).sum::<f64>() / fft_size as f64;
+
+        Self {
+            sample_rate_hz,
+            fft_size,
+            fft,
+            window,
+            window_power,
+        }
+    }
+
+    /// Compute power spectral density using FFT.
+    ///
+    /// Returns power values for each frequency bin from 0 to Nyquist.
+    pub fn compute_psd(&self, signal: &[f64]) -> Vec<f64> {
+        if signal.len() < self.fft_size {
+            // Zero-pad if signal is shorter than FFT size
+            let mut padded = vec![0.0; self.fft_size];
+            padded[..signal.len()].copy_from_slice(signal);
+            return self.compute_psd_internal(&padded);
+        }
+
+        // Use Welch's method with 50% overlapping windows
+        let hop_size = self.fft_size / 2;
+        let n_windows = (signal.len() - self.fft_size) / hop_size + 1;
+
+        if n_windows == 0 {
+            return self.compute_psd_internal(&signal[..self.fft_size]);
+        }
+
+        // Average PSD across windows
+        let mut avg_psd = vec![0.0; self.fft_size / 2 + 1];
+        for w in 0..n_windows {
+            let start = w * hop_size;
+            let window_psd = self.compute_psd_internal(&signal[start..start + self.fft_size]);
+            for (i, p) in window_psd.iter().enumerate() {
+                avg_psd[i] += p;
+            }
+        }
+
+        for p in &mut avg_psd {
+            *p /= n_windows as f64;
+        }
+
+        avg_psd
+    }
+
+    fn compute_psd_internal(&self, segment: &[f64]) -> Vec<f64> {
+        // Apply window and convert to complex
+        let mut buffer: Vec<Complex<f64>> = segment
+            .iter()
+            .zip(self.window.iter())
+            .map(|(&s, &w)| Complex::new(s * w, 0.0))
+            .collect();
+
+        // Perform FFT
+        self.fft.process(&mut buffer);
+
+        // Compute one-sided power spectral density
+        let n = self.fft_size;
+        let scale = 2.0 / (self.sample_rate_hz * self.window_power * n as f64);
+
+        let mut psd = Vec::with_capacity(n / 2 + 1);
+
+        // DC component (no doubling)
+        psd.push(buffer[0].norm_sqr() * scale / 2.0);
+
+        // Positive frequencies (doubled for one-sided PSD)
+        for i in 1..n / 2 {
+            psd.push(buffer[i].norm_sqr() * scale);
+        }
+
+        // Nyquist component (no doubling)
+        psd.push(buffer[n / 2].norm_sqr() * scale / 2.0);
+
+        psd
+    }
+
+    /// Get frequency bin for a given frequency in Hz.
+    #[must_use]
+    pub fn freq_to_bin(&self, freq_hz: f64) -> usize {
+        let bin = (freq_hz * self.fft_size as f64 / self.sample_rate_hz).round() as usize;
+        bin.min(self.fft_size / 2)
+    }
+
+    /// Get frequency in Hz for a given bin index.
+    #[must_use]
+    pub fn bin_to_freq(&self, bin: usize) -> f64 {
+        bin as f64 * self.sample_rate_hz / self.fft_size as f64
+    }
+
+    /// Calculate band power between two frequencies (inclusive).
+    ///
+    /// # Arguments
+    /// * `signal` - Input signal
+    /// * `low_hz` - Lower frequency bound
+    /// * `high_hz` - Upper frequency bound
+    ///
+    /// # Returns
+    /// Integrated power in the specified band (µV²/Hz)
+    pub fn band_power(&self, signal: &[f64], low_hz: f64, high_hz: f64) -> f64 {
+        let psd = self.compute_psd(signal);
+
+        let low_bin = self.freq_to_bin(low_hz);
+        let high_bin = self.freq_to_bin(high_hz).min(psd.len() - 1);
+
+        if low_bin > high_bin || low_bin >= psd.len() {
+            return 0.0;
+        }
+
+        // Integrate power in band (trapezoidal rule)
+        let freq_resolution = self.sample_rate_hz / self.fft_size as f64;
+        let mut power = 0.0;
+
+        for i in low_bin..=high_bin {
+            power += psd[i] * freq_resolution;
+        }
+
+        power
+    }
+
+    /// Calculate power at a specific frequency (for ASSR analysis).
+    ///
+    /// Uses a narrow band around the target frequency.
+    ///
+    /// # Arguments
+    /// * `signal` - Input signal
+    /// * `freq_hz` - Target frequency
+    ///
+    /// # Returns
+    /// Power at the target frequency and phase in radians
+    pub fn power_at_frequency(&self, signal: &[f64], freq_hz: f64) -> (f64, f64) {
+        if signal.len() < self.fft_size {
+            let mut padded = vec![0.0; self.fft_size];
+            padded[..signal.len()].copy_from_slice(signal);
+            return self.power_at_frequency_internal(&padded, freq_hz);
+        }
+
+        self.power_at_frequency_internal(&signal[..self.fft_size], freq_hz)
+    }
+
+    fn power_at_frequency_internal(&self, segment: &[f64], freq_hz: f64) -> (f64, f64) {
+        // Apply window and convert to complex
+        let mut buffer: Vec<Complex<f64>> = segment
+            .iter()
+            .zip(self.window.iter())
+            .map(|(&s, &w)| Complex::new(s * w, 0.0))
+            .collect();
+
+        // Perform FFT
+        self.fft.process(&mut buffer);
+
+        // Find the target bin
+        let bin = self.freq_to_bin(freq_hz);
+        if bin >= buffer.len() {
+            return (0.0, 0.0);
+        }
+
+        let complex_val = buffer[bin];
+        let power = complex_val.norm_sqr();
+        let phase = complex_val.arg();
+
+        (power, phase)
+    }
+
+    /// Calculate relative band power (percentage of total power).
+    pub fn relative_band_power(&self, signal: &[f64], low_hz: f64, high_hz: f64) -> f64 {
+        let psd = self.compute_psd(signal);
+
+        let low_bin = self.freq_to_bin(low_hz);
+        let high_bin = self.freq_to_bin(high_hz).min(psd.len() - 1);
+
+        let band_power: f64 = psd[low_bin..=high_bin].iter().sum();
+        let total_power: f64 = psd.iter().sum();
+
+        if total_power > 1e-10 {
+            band_power / total_power
+        } else {
+            0.0
+        }
+    }
+
+    /// Extract all canonical EEG band powers.
+    ///
+    /// Returns (delta, theta, alpha, beta, gamma) powers.
+    pub fn canonical_bands(&self, signal: &[f64]) -> [f64; 5] {
+        [
+            self.band_power(signal, 0.5, 4.0),   // Delta
+            self.band_power(signal, 4.0, 8.0),   // Theta
+            self.band_power(signal, 8.0, 13.0),  // Alpha
+            self.band_power(signal, 13.0, 30.0), // Beta
+            self.band_power(signal, 30.0, 100.0), // Gamma
+        ]
+    }
+}
+
+impl std::fmt::Debug for SpectralAnalyzer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpectralAnalyzer")
+            .field("sample_rate_hz", &self.sample_rate_hz)
+            .field("fft_size", &self.fft_size)
+            .finish()
+    }
+}
 
 /// Feature extraction configuration
 #[derive(Clone, Debug)]
@@ -37,10 +289,12 @@ impl Default for FeatureConfig {
 }
 
 /// SEP Feature Extractor
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SepFeatureExtractor {
     /// Configuration
     config: FeatureConfig,
+    /// Spectral analyzer for FFT-based band power
+    spectral: SpectralAnalyzer,
     /// Expected N20 latency window (min, max) in ms
     n20_window_ms: (f64, f64),
     /// Expected P25 latency window
@@ -49,12 +303,25 @@ pub struct SepFeatureExtractor {
     n30_window_ms: (f64, f64),
 }
 
+impl std::fmt::Debug for SepFeatureExtractor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SepFeatureExtractor")
+            .field("config", &self.config)
+            .field("n20_window_ms", &self.n20_window_ms)
+            .field("p25_window_ms", &self.p25_window_ms)
+            .field("n30_window_ms", &self.n30_window_ms)
+            .finish()
+    }
+}
+
 impl SepFeatureExtractor {
     /// Create a new SEP feature extractor
     #[must_use]
     pub fn new(config: FeatureConfig) -> Self {
+        let spectral = SpectralAnalyzer::new(config.sample_rate_hz, config.window_size);
         Self {
             config,
+            spectral,
             n20_window_ms: (18.0, 25.0),
             p25_window_ms: (23.0, 30.0),
             n30_window_ms: (28.0, 35.0),
@@ -120,9 +387,9 @@ impl SepFeatureExtractor {
             true, // negative
         );
 
-        // Calculate mu and beta band powers (would need FFT in real implementation)
-        let mu_suppression = self.calculate_band_power(&values, 8.0, 12.0);
-        let beta_rebound = self.calculate_band_power(&values, 15.0, 25.0);
+        // Calculate mu and beta band powers using FFT
+        let mu_suppression = self.spectral.band_power(&values, 8.0, 12.0);
+        let beta_rebound = self.spectral.band_power(&values, 15.0, 25.0);
 
         Ok(SepComponents {
             n20_latency_ms: n20_latency,
@@ -178,15 +445,6 @@ impl SepFeatureExtractor {
         let latency = times_ms.get(best_idx).copied().unwrap_or(0.0);
         (latency, best_val)
     }
-
-    fn calculate_band_power(&self, _values: &[f64], _low_hz: f64, _high_hz: f64) -> f64 {
-        // Simplified: would use FFT in full implementation
-        // For now, return variance as a proxy
-        let mean: f64 = _values.iter().sum::<f64>() / _values.len().max(1) as f64;
-        let variance: f64 = _values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>()
-            / _values.len().max(1) as f64;
-        variance.sqrt()
-    }
 }
 
 impl Default for SepFeatureExtractor {
@@ -196,10 +454,12 @@ impl Default for SepFeatureExtractor {
 }
 
 /// AEP Feature Extractor
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AepFeatureExtractor {
     /// Configuration
     config: FeatureConfig,
+    /// Spectral analyzer for FFT-based band power
+    spectral: SpectralAnalyzer,
     /// N1 window (ms)
     n1_window_ms: (f64, f64),
     /// P2 window (ms)
@@ -208,12 +468,25 @@ pub struct AepFeatureExtractor {
     n2_window_ms: (f64, f64),
 }
 
+impl std::fmt::Debug for AepFeatureExtractor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AepFeatureExtractor")
+            .field("config", &self.config)
+            .field("n1_window_ms", &self.n1_window_ms)
+            .field("p2_window_ms", &self.p2_window_ms)
+            .field("n2_window_ms", &self.n2_window_ms)
+            .finish()
+    }
+}
+
 impl AepFeatureExtractor {
     /// Create a new AEP feature extractor
     #[must_use]
     pub fn new(config: FeatureConfig) -> Self {
+        let spectral = SpectralAnalyzer::new(config.sample_rate_hz, config.window_size);
         Self {
             config,
+            spectral,
             n1_window_ms: (80.0, 120.0),
             p2_window_ms: (150.0, 250.0),
             n2_window_ms: (200.0, 350.0),
@@ -271,9 +544,9 @@ impl AepFeatureExtractor {
             true,
         );
 
-        // ASSR and gamma would require proper FFT analysis
-        let assr_power = self.calculate_power_at_frequency(&values, 40.0);
-        let gamma_power = self.calculate_band_power(&values, 30.0, 100.0);
+        // ASSR and gamma power using proper FFT analysis
+        let (assr_power, assr_phase) = self.spectral.power_at_frequency(&values, 40.0);
+        let gamma_power = self.spectral.band_power(&values, 30.0, 100.0);
 
         Ok(AepComponents {
             n1_latency_ms: n1_latency,
@@ -283,7 +556,7 @@ impl AepFeatureExtractor {
             n2_latency_ms: n2_latency,
             n2_amplitude_uv: n2_amplitude,
             assr_power,
-            assr_phase: 0.0, // Would need phase analysis
+            assr_phase,
             gamma_power,
         })
     }
@@ -312,18 +585,6 @@ impl AepFeatureExtractor {
         let latency = times_ms.get(best_idx).copied().unwrap_or(0.0);
         (latency, best_val)
     }
-
-    fn calculate_power_at_frequency(&self, _values: &[f64], _freq_hz: f64) -> f64 {
-        // Simplified placeholder
-        0.0
-    }
-
-    fn calculate_band_power(&self, _values: &[f64], _low_hz: f64, _high_hz: f64) -> f64 {
-        let mean: f64 = _values.iter().sum::<f64>() / _values.len().max(1) as f64;
-        let variance: f64 = _values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>()
-            / _values.len().max(1) as f64;
-        variance.sqrt()
-    }
 }
 
 impl Default for AepFeatureExtractor {
@@ -333,22 +594,36 @@ impl Default for AepFeatureExtractor {
 }
 
 /// GEP Feature Extractor
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct GepFeatureExtractor {
     /// Configuration
     config: FeatureConfig,
+    /// Spectral analyzer for FFT-based band power
+    spectral: SpectralAnalyzer,
     /// P1 window (ms)
     p1_window_ms: (f64, f64),
     /// N1 window (ms)
     n1_window_ms: (f64, f64),
 }
 
+impl std::fmt::Debug for GepFeatureExtractor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GepFeatureExtractor")
+            .field("config", &self.config)
+            .field("p1_window_ms", &self.p1_window_ms)
+            .field("n1_window_ms", &self.n1_window_ms)
+            .finish()
+    }
+}
+
 impl GepFeatureExtractor {
     /// Create a new GEP feature extractor
     #[must_use]
     pub fn new(config: FeatureConfig) -> Self {
+        let spectral = SpectralAnalyzer::new(config.sample_rate_hz, config.window_size);
         Self {
             config,
+            spectral,
             p1_window_ms: (100.0, 160.0),
             n1_window_ms: (150.0, 220.0),
         }
@@ -403,8 +678,8 @@ impl GepFeatureExtractor {
             true,
         );
 
-        // Frontal theta
-        let frontal_theta = self.calculate_band_power(&values, 4.0, 8.0);
+        // Frontal theta using FFT
+        let frontal_theta = self.spectral.band_power(&values, 4.0, 8.0);
 
         Ok(GepComponents {
             p1_latency_ms: p1_latency,
@@ -438,13 +713,6 @@ impl GepFeatureExtractor {
 
         let latency = times_ms.get(best_idx).copied().unwrap_or(0.0);
         (latency, best_val)
-    }
-
-    fn calculate_band_power(&self, _values: &[f64], _low_hz: f64, _high_hz: f64) -> f64 {
-        let mean: f64 = _values.iter().sum::<f64>() / _values.len().max(1) as f64;
-        let variance: f64 = _values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>()
-            / _values.len().max(1) as f64;
-        variance.sqrt()
     }
 }
 
@@ -607,5 +875,143 @@ mod tests {
         let activation = result.unwrap();
         assert!(activation.delta_hbo2 > 0.0);
         assert!(activation.delta_hbr < 0.0);
+    }
+
+    #[test]
+    fn test_spectral_analyzer_sinusoid() {
+        // Create a 10 Hz sine wave at 250 Hz sample rate
+        let sample_rate = 250.0;
+        let frequency = 10.0;
+        let n_samples = 512;
+
+        let signal: Vec<f64> = (0..n_samples)
+            .map(|i| {
+                let t = i as f64 / sample_rate;
+                (2.0 * std::f64::consts::PI * frequency * t).sin()
+            })
+            .collect();
+
+        let analyzer = SpectralAnalyzer::new(sample_rate, 256);
+        let psd = analyzer.compute_psd(&signal);
+
+        // Find the bin with maximum power
+        let max_bin = psd
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+
+        let peak_freq = analyzer.bin_to_freq(max_bin);
+
+        // Peak should be near 10 Hz
+        assert!(
+            (peak_freq - frequency).abs() < 2.0,
+            "Expected peak near {frequency} Hz, got {peak_freq} Hz"
+        );
+    }
+
+    #[test]
+    fn test_spectral_analyzer_band_power() {
+        let sample_rate = 250.0;
+        let analyzer = SpectralAnalyzer::new(sample_rate, 256);
+
+        // Create signal with alpha (10 Hz) component
+        let n_samples = 512;
+        let signal: Vec<f64> = (0..n_samples)
+            .map(|i| {
+                let t = i as f64 / sample_rate;
+                // 10 Hz (alpha) + small amount of noise
+                (2.0 * std::f64::consts::PI * 10.0 * t).sin()
+            })
+            .collect();
+
+        // Alpha power should be higher than theta and beta
+        let theta_power = analyzer.band_power(&signal, 4.0, 8.0);
+        let alpha_power = analyzer.band_power(&signal, 8.0, 13.0);
+        let beta_power = analyzer.band_power(&signal, 13.0, 30.0);
+
+        assert!(
+            alpha_power > theta_power,
+            "Alpha should dominate: alpha={alpha_power}, theta={theta_power}"
+        );
+        assert!(
+            alpha_power > beta_power,
+            "Alpha should dominate: alpha={alpha_power}, beta={beta_power}"
+        );
+    }
+
+    #[test]
+    fn test_spectral_analyzer_canonical_bands() {
+        let sample_rate = 500.0;
+        let analyzer = SpectralAnalyzer::new(sample_rate, 512);
+
+        // Create signal with 30 Hz gamma component
+        let n_samples = 1024;
+        let signal: Vec<f64> = (0..n_samples)
+            .map(|i| {
+                let t = i as f64 / sample_rate;
+                (2.0 * std::f64::consts::PI * 35.0 * t).sin() // 35 Hz gamma
+            })
+            .collect();
+
+        let bands = analyzer.canonical_bands(&signal);
+        let [delta, theta, alpha, beta, gamma] = bands;
+
+        // Gamma should be the dominant band
+        assert!(gamma > delta, "Gamma should dominate delta");
+        assert!(gamma > theta, "Gamma should dominate theta");
+        assert!(gamma > alpha, "Gamma should dominate alpha");
+        assert!(gamma > beta, "Gamma should dominate beta");
+    }
+
+    #[test]
+    fn test_spectral_analyzer_power_at_frequency() {
+        let sample_rate = 250.0;
+        let target_freq = 40.0;
+        let n_samples = 256;
+
+        // Create 40 Hz ASSR stimulus
+        let signal: Vec<f64> = (0..n_samples)
+            .map(|i| {
+                let t = i as f64 / sample_rate;
+                (2.0 * std::f64::consts::PI * target_freq * t).sin()
+            })
+            .collect();
+
+        let analyzer = SpectralAnalyzer::new(sample_rate, 256);
+        let (power, phase) = analyzer.power_at_frequency(&signal, target_freq);
+
+        // Power should be significant
+        assert!(power > 0.0, "Power at 40 Hz should be positive");
+
+        // Phase should be in valid range
+        assert!(
+            phase >= -std::f64::consts::PI && phase <= std::f64::consts::PI,
+            "Phase should be in [-π, π]"
+        );
+    }
+
+    #[test]
+    fn test_spectral_analyzer_relative_band_power() {
+        let sample_rate = 250.0;
+        let analyzer = SpectralAnalyzer::new(sample_rate, 256);
+
+        // Create pure 10 Hz signal
+        let n_samples = 512;
+        let signal: Vec<f64> = (0..n_samples)
+            .map(|i| {
+                let t = i as f64 / sample_rate;
+                (2.0 * std::f64::consts::PI * 10.0 * t).sin()
+            })
+            .collect();
+
+        let relative_alpha = analyzer.relative_band_power(&signal, 8.0, 13.0);
+
+        // Most power should be in alpha band for a 10 Hz signal
+        assert!(
+            relative_alpha > 0.5,
+            "Relative alpha power should be >50%, got {relative_alpha}"
+        );
     }
 }

@@ -69,7 +69,7 @@ crates/
 - **EEG**: TI ADS1299 (8-channel, 24-bit, SPI)
 - **fNIRS**: TI ADS1115 + 760nm/850nm LEDs + OPT101 photodetectors
 - **MCU**: ESP32-WROOM-DA
-- **Stimulation**: DAC8564 + Howland current source (placeholder)
+- **Stimulation**: DAC8564 (16-bit quad DAC) + Howland current source
 
 GPIO assignments: SPI on 23/19/18/5/4, I2C on 21/22, PWM on 25-27, DAC on 32-33.
 
